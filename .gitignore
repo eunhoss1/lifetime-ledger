@@ -22,6 +22,7 @@ backups/
 exports/
 *.backup.json
 *-backup.json
+lifetime-ledger-backup*.json
 *.ledger.json
 *.csv
 

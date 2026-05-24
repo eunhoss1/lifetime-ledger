@@ -32,3 +32,10 @@ export {
   isMonthClosed,
   reopenMonth,
 } from './monthlyClosings'
+export {
+  createFullBackup,
+  getBackupSummary,
+  restoreFullBackup,
+  validateBackupJson,
+} from './backup'
+export type { BackupRoot, BackupSummary } from '../domain/backup'

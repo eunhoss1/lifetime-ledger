@@ -1,11 +1,13 @@
 import {
   type FormEvent,
+  type ChangeEvent,
   type ReactNode,
   useCallback,
   useEffect,
   useMemo,
   useState,
 } from 'react'
+import { createBackupFileName } from '../domain/backup'
 import { getCurrentMonthInfo, toDateKey } from '../domain/date'
 import { formatKrwAmount } from '../domain/money'
 import type {
@@ -22,8 +24,10 @@ import {
   archiveRecurringItem,
   closeMonth,
   CLOSED_MONTH_MESSAGE,
+  createFullBackup,
   createRecurringItem,
   createTransaction,
+  getBackupSummary,
   getMonthlyClosing,
   getMonthlyTransactionSummary,
   initializeLedgerRepository,
@@ -34,8 +38,12 @@ import {
   listTransactionsByMonth,
   previewRecurringItemsForMonth,
   reopenMonth,
+  restoreFullBackup,
   softDeleteTransaction,
   updateTransaction,
+  validateBackupJson,
+  type BackupRoot,
+  type BackupSummary,
   type LedgerBootstrapStatus,
   type RecurringPreviewItem,
 } from '../repositories'
@@ -92,6 +100,10 @@ function App() {
   const [recurringMessage, setRecurringMessage] = useState<string>('')
   const [closingNote, setClosingNote] = useState<string>('')
   const [closingMessage, setClosingMessage] = useState<string>('')
+  const [backupMessage, setBackupMessage] = useState<string>('')
+  const [selectedBackup, setSelectedBackup] = useState<BackupRoot | null>(null)
+  const [backupSummary, setBackupSummary] = useState<BackupSummary | null>(null)
+  const [restoreConfirmation, setRestoreConfirmation] = useState<string>('')
 
   const loadData = useCallback(async (): Promise<LedgerViewData> => {
     const [
@@ -372,6 +384,81 @@ function App() {
     }
   }
 
+  async function handleExportBackup() {
+    setBackupMessage('')
+
+    try {
+      const backup = await createFullBackup()
+      const json = JSON.stringify(backup, null, 2)
+      const blob = new Blob([json], { type: 'application/json;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+
+      anchor.href = url
+      anchor.download = createBackupFileName(new Date(backup.exportedAt))
+      anchor.click()
+      URL.revokeObjectURL(url)
+      setBackupMessage('전체 JSON 백업 파일을 다운로드했습니다.')
+    } catch (error) {
+      setBackupMessage(
+        error instanceof Error ? error.message : '백업 내보내기에 실패했습니다.',
+      )
+    }
+  }
+
+  async function handleBackupFileChange(event: ChangeEvent<HTMLInputElement>) {
+    setBackupMessage('')
+    setSelectedBackup(null)
+    setBackupSummary(null)
+    setRestoreConfirmation('')
+
+    const file = event.target.files?.[0]
+
+    if (!file) {
+      return
+    }
+
+    try {
+      const text = await file.text()
+      const backup = validateBackupJson(text)
+      const summary = getBackupSummary(backup)
+
+      setSelectedBackup(backup)
+      setBackupSummary(summary)
+      setBackupMessage('백업 파일 검증을 통과했습니다.')
+    } catch (error) {
+      setBackupMessage(
+        error instanceof Error ? error.message : '백업 파일 검증에 실패했습니다.',
+      )
+    }
+  }
+
+  async function handleRestoreBackup() {
+    setBackupMessage('')
+
+    if (!selectedBackup) {
+      setBackupMessage('먼저 백업 파일을 선택하고 검증해 주세요.')
+      return
+    }
+
+    if (restoreConfirmation !== '복구합니다') {
+      setBackupMessage('확인 문구를 정확히 입력해야 복구할 수 있습니다.')
+      return
+    }
+
+    try {
+      await restoreFullBackup(selectedBackup)
+      setBackupMessage('백업 복구를 완료했습니다.')
+      setSelectedBackup(null)
+      setBackupSummary(null)
+      setRestoreConfirmation('')
+      setEditingId(null)
+      await refreshData(bootstrap)
+    } catch (error) {
+      setBackupMessage(error instanceof Error ? error.message : '백업 복구에 실패했습니다.')
+    }
+  }
+
   return (
     <PageShell currentMonth={currentMonth.monthKey}>
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -458,6 +545,99 @@ function App() {
             <p className="text-sm text-slate-600">{closingMessage}</p>
           ) : null}
         </div>
+      </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-lg font-semibold text-slate-950">백업/복구</h2>
+          <p className="text-sm text-slate-500">
+            전체 IndexedDB 데이터를 UTF-8 JSON으로 내보내고, 검증된 백업 파일로 복구합니다.
+          </p>
+        </div>
+
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <button
+            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+            type="button"
+            onClick={handleExportBackup}
+          >
+            전체 JSON 백업 내보내기
+          </button>
+          <label className="grid gap-1 text-sm font-medium text-slate-700">
+            JSON 백업 파일 선택
+            <input
+              accept="application/json,.json"
+              className="text-sm"
+              type="file"
+              onChange={handleBackupFileChange}
+            />
+          </label>
+        </div>
+
+        {backupSummary ? (
+          <div className="mt-5 rounded-md border border-slate-200 bg-slate-50 p-4">
+            <h3 className="text-sm font-semibold text-slate-950">백업 요약</h3>
+            <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
+              <InfoTile label="exportedAt" value={backupSummary.exportedAt} />
+              <InfoTile
+                label="schemaVersion"
+                value={backupSummary.schemaVersion.toString()}
+              />
+              <InfoTile
+                label="transactions"
+                value={backupSummary.tableCounts.transactions.toString()}
+              />
+              <InfoTile
+                label="categories"
+                value={backupSummary.tableCounts.categories.toString()}
+              />
+              <InfoTile
+                label="accounts"
+                value={backupSummary.tableCounts.accounts.toString()}
+              />
+              <InfoTile
+                label="recurringItems"
+                value={backupSummary.tableCounts.recurringItems.toString()}
+              />
+              <InfoTile
+                label="recurringGeneratedRecords"
+                value={backupSummary.tableCounts.recurringGeneratedRecords.toString()}
+              />
+              <InfoTile
+                label="monthlyClosings"
+                value={backupSummary.tableCounts.monthlyClosings.toString()}
+              />
+            </div>
+          </div>
+        ) : null}
+
+        <div className="mt-5 rounded-md border border-red-200 bg-red-50 p-4">
+          <h3 className="text-sm font-semibold text-red-950">복구 전 확인</h3>
+          <p className="mt-2 text-sm leading-6 text-red-700">
+            복구는 현재 브라우저의 IndexedDB 데이터를 백업 파일 내용으로 교체합니다.
+            필요하면 먼저 “전체 JSON 백업 내보내기”로 현재 데이터를 저장해 주세요.
+          </p>
+          <label className="mt-3 grid max-w-sm gap-1 text-sm font-medium text-red-950">
+            확인 문구 입력: 복구합니다
+            <input
+              className="rounded-md border border-red-200 px-3 py-2"
+              value={restoreConfirmation}
+              onChange={(event) => setRestoreConfirmation(event.target.value)}
+            />
+          </label>
+          <button
+            className="mt-3 rounded-md bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+            disabled={!selectedBackup || restoreConfirmation !== '복구합니다'}
+            type="button"
+            onClick={handleRestoreBackup}
+          >
+            검증된 백업으로 복구
+          </button>
+        </div>
+
+        {backupMessage ? (
+          <p className="mt-4 text-sm text-slate-600">{backupMessage}</p>
+        ) : null}
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
