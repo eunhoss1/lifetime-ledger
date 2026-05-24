@@ -19,11 +19,14 @@ dist-ssr
 
 # Local ledger exports and backups
 backups/
+backup/
 exports/
+export/
 *.backup.json
 *-backup.json
 lifetime-ledger-backup*.json
 *.ledger.json
+lifetime-ledger-transactions*.csv
 *.csv
 
 # Editor directories and files

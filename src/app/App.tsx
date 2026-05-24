@@ -8,6 +8,10 @@ import {
   useState,
 } from 'react'
 import { createBackupFileName } from '../domain/backup'
+import {
+  createAllTransactionsCsvFileName,
+  createTransactionsCsvFileNameForMonth,
+} from '../domain/csv'
 import { getCurrentMonthInfo, toDateKey } from '../domain/date'
 import { formatKrwAmount } from '../domain/money'
 import type {
@@ -27,6 +31,8 @@ import {
   createFullBackup,
   createRecurringItem,
   createTransaction,
+  exportAllTransactionsCsv,
+  exportTransactionsCsvByMonth,
   getBackupSummary,
   getMonthlyClosing,
   getMonthlyTransactionSummary,
@@ -104,6 +110,7 @@ function App() {
   const [selectedBackup, setSelectedBackup] = useState<BackupRoot | null>(null)
   const [backupSummary, setBackupSummary] = useState<BackupSummary | null>(null)
   const [restoreConfirmation, setRestoreConfirmation] = useState<string>('')
+  const [csvMessage, setCsvMessage] = useState<string>('')
 
   const loadData = useCallback(async (): Promise<LedgerViewData> => {
     const [
@@ -459,6 +466,34 @@ function App() {
     }
   }
 
+  async function handleExportCurrentMonthCsv() {
+    setCsvMessage('')
+
+    try {
+      const csv = await exportTransactionsCsvByMonth(currentMonth.monthKey)
+      downloadTextFile(csv, createTransactionsCsvFileNameForMonth(currentMonth.monthKey), 'text/csv;charset=utf-8')
+      setCsvMessage('현재 월 거래 CSV를 다운로드했습니다.')
+    } catch (error) {
+      setCsvMessage(
+        error instanceof Error ? error.message : '현재 월 CSV 내보내기에 실패했습니다.',
+      )
+    }
+  }
+
+  async function handleExportAllTransactionsCsv() {
+    setCsvMessage('')
+
+    try {
+      const csv = await exportAllTransactionsCsv()
+      downloadTextFile(csv, createAllTransactionsCsvFileName(), 'text/csv;charset=utf-8')
+      setCsvMessage('전체 거래 CSV를 다운로드했습니다.')
+    } catch (error) {
+      setCsvMessage(
+        error instanceof Error ? error.message : '전체 거래 CSV 내보내기에 실패했습니다.',
+      )
+    }
+  }
+
   return (
     <PageShell currentMonth={currentMonth.monthKey}>
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -638,6 +673,33 @@ function App() {
         {backupMessage ? (
           <p className="mt-4 text-sm text-slate-600">{backupMessage}</p>
         ) : null}
+      </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-lg font-semibold text-slate-950">CSV 내보내기</h2>
+          <p className="text-sm text-slate-500">
+            거래 데이터를 엑셀/구글시트 분석과 장기 보관용 CSV로 다운로드합니다.
+          </p>
+        </div>
+
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <button
+            className="rounded-md border border-teal-700 px-4 py-2 text-sm font-semibold text-teal-700"
+            type="button"
+            onClick={handleExportCurrentMonthCsv}
+          >
+            현재 월 거래 CSV 내보내기
+          </button>
+          <button
+            className="rounded-md border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-700"
+            type="button"
+            onClick={handleExportAllTransactionsCsv}
+          >
+            전체 거래 CSV 내보내기
+          </button>
+          {csvMessage ? <p className="text-sm text-slate-600">{csvMessage}</p> : null}
+        </div>
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
@@ -1255,6 +1317,17 @@ function ensureRecurringFormDefaults(
 
 function formatSignedKrwAmount(amount: number): string {
   return amount < 0 ? `-${formatKrwAmount(Math.abs(amount))}` : formatKrwAmount(amount)
+}
+
+function downloadTextFile(content: string, fileName: string, type: string) {
+  const blob = new Blob([content], { type })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+
+  anchor.href = url
+  anchor.download = fileName
+  anchor.click()
+  URL.revokeObjectURL(url)
 }
 
 export default App

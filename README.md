@@ -24,10 +24,11 @@ npm run build
 - 3단계: 반복지출 등록, 현재 월 미반영 반복지출 미리보기, 사용자 확인 후 이번 달 거래로 반영, 중복 생성 방지
 - 4단계: 월마감 snapshot 저장, 닫힌 월 거래/반복지출 반영 차단, 다시 열기, 재마감
 - 5단계: 전체 JSON 백업 내보내기, 백업 파일 검증/요약, 확인 문구 기반 전체 복구
+- 6단계: 현재 월/전체 거래 CSV export, 카테고리/계좌 표시명 포함, soft deleted 거래 기본 제외
 
 ## 아직 구현하지 않은 범위
 
-- CSV export
+- CSV import
 - Playwright E2E 테스트
 - Supabase/Firebase 동기화
 - React Router

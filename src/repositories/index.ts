@@ -39,3 +39,7 @@ export {
   validateBackupJson,
 } from './backup'
 export type { BackupRoot, BackupSummary } from '../domain/backup'
+export {
+  exportAllTransactionsCsv,
+  exportTransactionsCsvByMonth,
+} from './csvExport'
