@@ -25,3 +25,10 @@ export type {
   RecurringPreviewItem,
   UpdateRecurringItemPatch,
 } from './recurring'
+export {
+  closeMonth,
+  CLOSED_MONTH_MESSAGE,
+  getMonthlyClosing,
+  isMonthClosed,
+  reopenMonth,
+} from './monthlyClosings'

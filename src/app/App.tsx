@@ -11,6 +11,7 @@ import { formatKrwAmount } from '../domain/money'
 import type {
   Account,
   Category,
+  MonthlyClosing,
   MonthlyClosingTotals,
   RecurringScheduleType,
   Transaction,
@@ -19,15 +20,20 @@ import type {
 import {
   applyRecurringItemsForMonth,
   archiveRecurringItem,
+  closeMonth,
+  CLOSED_MONTH_MESSAGE,
   createRecurringItem,
   createTransaction,
+  getMonthlyClosing,
   getMonthlyTransactionSummary,
   initializeLedgerRepository,
+  isMonthClosed,
   listActiveAccounts,
   listActiveCategories,
   listActiveRecurringItems,
   listTransactionsByMonth,
   previewRecurringItemsForMonth,
+  reopenMonth,
   softDeleteTransaction,
   updateTransaction,
   type LedgerBootstrapStatus,
@@ -41,6 +47,8 @@ interface LedgerViewData {
   summary: MonthlyClosingTotals
   recurringItems: Awaited<ReturnType<typeof listActiveRecurringItems>>
   recurringPreviews: RecurringPreviewItem[]
+  monthlyClosing: MonthlyClosing | undefined
+  isClosed: boolean
 }
 
 interface TransactionFormState {
@@ -82,6 +90,8 @@ function App() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [message, setMessage] = useState<string>('')
   const [recurringMessage, setRecurringMessage] = useState<string>('')
+  const [closingNote, setClosingNote] = useState<string>('')
+  const [closingMessage, setClosingMessage] = useState<string>('')
 
   const loadData = useCallback(async (): Promise<LedgerViewData> => {
     const [
@@ -91,6 +101,8 @@ function App() {
       summary,
       recurringItems,
       recurringPreviews,
+      monthlyClosing,
+      closed,
     ] = await Promise.all([
       listActiveCategories(),
       listActiveAccounts(),
@@ -98,6 +110,8 @@ function App() {
       getMonthlyTransactionSummary(currentMonth.monthKey),
       listActiveRecurringItems(),
       previewRecurringItemsForMonth(currentMonth.monthKey),
+      getMonthlyClosing(currentMonth.monthKey),
+      isMonthClosed(currentMonth.monthKey),
     ])
 
     return {
@@ -107,6 +121,8 @@ function App() {
       summary,
       recurringItems,
       recurringPreviews,
+      monthlyClosing,
+      isClosed: closed,
     }
   }, [currentMonth.monthKey])
 
@@ -120,6 +136,7 @@ function App() {
     setRecurringForm((current) =>
       ensureRecurringFormDefaults(current, data.categories, data.accounts),
     )
+    setClosingNote(data.monthlyClosing?.note ?? '')
   }
 
   useEffect(() => {
@@ -141,6 +158,7 @@ function App() {
           setRecurringForm((current) =>
             ensureRecurringFormDefaults(current, data.categories, data.accounts),
           )
+          setClosingNote(data.monthlyClosing?.note ?? '')
         }
       })
       .catch((error: unknown) => {
@@ -190,6 +208,11 @@ function App() {
     event.preventDefault()
     setMessage('')
 
+    if (data.isClosed) {
+      setMessage(CLOSED_MONTH_MESSAGE)
+      return
+    }
+
     try {
       if (editingId) {
         await updateTransaction(editingId, transactionForm)
@@ -209,6 +232,11 @@ function App() {
 
   async function handleDeleteTransaction(id: string) {
     setMessage('')
+
+    if (data.isClosed) {
+      setMessage(CLOSED_MONTH_MESSAGE)
+      return
+    }
 
     try {
       await softDeleteTransaction(id)
@@ -253,6 +281,11 @@ function App() {
   async function handleApplyRecurring() {
     setRecurringMessage('')
 
+    if (data.isClosed) {
+      setRecurringMessage(CLOSED_MONTH_MESSAGE)
+      return
+    }
+
     if (data.recurringPreviews.length === 0) {
       setRecurringMessage('이번 달에 반영할 반복지출이 없습니다.')
       return
@@ -287,6 +320,11 @@ function App() {
   }
 
   function startEdit(transaction: Transaction) {
+    if (data.isClosed) {
+      setMessage(CLOSED_MONTH_MESSAGE)
+      return
+    }
+
     setEditingId(transaction.id)
     setMessage('거래를 수정 중입니다.')
     setTransactionForm({
@@ -303,6 +341,35 @@ function App() {
     setEditingId(null)
     setMessage('')
     setTransactionForm(createDefaultTransactionForm(data.categories, data.accounts, today))
+  }
+
+  async function handleCloseMonth() {
+    setClosingMessage('')
+
+    try {
+      const closing = await closeMonth(currentMonth.monthKey, closingNote)
+
+      setClosingMessage('이번 달을 마감했습니다.')
+      setClosingNote(closing.note ?? '')
+      setEditingId(null)
+      await refreshData(bootstrap)
+    } catch (error) {
+      setClosingMessage(error instanceof Error ? error.message : '월마감에 실패했습니다.')
+    }
+  }
+
+  async function handleReopenMonth() {
+    setClosingMessage('')
+
+    try {
+      await reopenMonth(currentMonth.monthKey)
+      setClosingMessage('이번 달을 다시 열었습니다.')
+      await refreshData(bootstrap)
+    } catch (error) {
+      setClosingMessage(
+        error instanceof Error ? error.message : '월 다시 열기에 실패했습니다.',
+      )
+    }
   }
 
   return (
@@ -330,6 +397,71 @@ function App() {
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-1">
+          <h2 className="text-lg font-semibold text-slate-950">월마감</h2>
+          <p className="text-sm text-slate-500">
+            현재 월 거래 데이터를 snapshot으로 저장합니다. 닫힌 월은 다시 열기 전까지 수정할 수 없습니다.
+          </p>
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <InfoTile
+            label="상태"
+            value={data.monthlyClosing?.status === 'closed' ? '마감됨' : data.monthlyClosing?.status === 'reopened' ? '다시 열림' : '미마감'}
+          />
+          <InfoTile
+            label="마감 거래 수"
+            value={(data.monthlyClosing?.transactionCount ?? data.transactions.length).toString()}
+          />
+          <InfoTile
+            label="마감 지출"
+            value={formatKrwAmount(data.monthlyClosing?.expenseTotal ?? data.summary.expense)}
+          />
+          <InfoTile
+            label="마감 남은 돈"
+            value={formatSignedKrwAmount(data.monthlyClosing?.remaining ?? data.summary.remaining)}
+          />
+        </div>
+
+        <label className="mt-4 grid gap-1 text-sm font-medium text-slate-700">
+          월마감 메모
+          <textarea
+            className="min-h-20 rounded-md border border-slate-300 px-3 py-2"
+            placeholder="이번 달 특이사항을 적어 둡니다."
+            value={closingNote}
+            onChange={(event) => setClosingNote(event.target.value)}
+          />
+        </label>
+
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <button
+            className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+            disabled={data.isClosed}
+            type="button"
+            onClick={handleCloseMonth}
+          >
+            이번 달 마감하기
+          </button>
+          <button
+            className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-300"
+            disabled={!data.monthlyClosing}
+            type="button"
+            onClick={handleReopenMonth}
+          >
+            다시 열기
+          </button>
+          {data.isClosed ? (
+            <p className="text-sm font-medium text-red-700">
+              닫힌 월입니다. 다시 열기 후 수정하세요.
+            </p>
+          ) : null}
+          {closingMessage ? (
+            <p className="text-sm text-slate-600">{closingMessage}</p>
+          ) : null}
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-1">
           <h2 className="text-lg font-semibold text-slate-950">
             {editingId ? '거래 수정' : '거래 입력'}
           </h2>
@@ -339,6 +471,7 @@ function App() {
         </div>
 
         <form className="mt-5 grid gap-4" onSubmit={handleTransactionSubmit}>
+          <fieldset className="grid gap-4 disabled:opacity-60" disabled={data.isClosed}>
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="grid gap-1 text-sm font-medium text-slate-700">
               유형
@@ -452,7 +585,7 @@ function App() {
 
           <div className="flex flex-wrap items-center gap-3">
             <button
-              className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800"
+              className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300"
               type="submit"
             >
               {editingId ? '수정 저장' : '거래 추가'}
@@ -468,6 +601,7 @@ function App() {
             ) : null}
             {message ? <p className="text-sm text-slate-600">{message}</p> : null}
           </div>
+          </fieldset>
         </form>
       </section>
 
@@ -480,6 +614,7 @@ function App() {
         </div>
 
         <form className="mt-5 grid gap-4" onSubmit={handleRecurringSubmit}>
+          <fieldset className="grid gap-4 disabled:opacity-60" disabled={data.isClosed}>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <label className="grid gap-1 text-sm font-medium text-slate-700">
               이름
@@ -637,13 +772,13 @@ function App() {
 
           <div className="flex flex-wrap items-center gap-3">
             <button
-              className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+              className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
               type="submit"
             >
               반복지출 추가
             </button>
             <button
-              className="rounded-md border border-teal-700 px-4 py-2 text-sm font-semibold text-teal-700"
+              className="rounded-md border border-teal-700 px-4 py-2 text-sm font-semibold text-teal-700 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-300"
               type="button"
               onClick={handleApplyRecurring}
             >
@@ -653,6 +788,7 @@ function App() {
               <p className="text-sm text-slate-600">{recurringMessage}</p>
             ) : null}
           </div>
+          </fieldset>
         </form>
 
         <div className="mt-6 grid gap-5 lg:grid-cols-2">
@@ -763,14 +899,16 @@ function App() {
                     <td className="py-3 text-right">
                       <div className="flex justify-end gap-2">
                         <button
-                          className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700"
+                          className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-300"
+                          disabled={data.isClosed}
                           type="button"
                           onClick={() => startEdit(transaction)}
                         >
                           수정
                         </button>
                         <button
-                          className="rounded-md border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700"
+                          className="rounded-md border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:text-slate-300"
+                          disabled={data.isClosed}
                           type="button"
                           onClick={() => handleDeleteTransaction(transaction.id)}
                         >
@@ -832,6 +970,20 @@ function SummaryCard({ label, amount, tone }: SummaryCardProps) {
         {formatSignedKrwAmount(amount)}
       </p>
     </section>
+  )
+}
+
+interface InfoTileProps {
+  label: string
+  value: string
+}
+
+function InfoTile({ label, value }: InfoTileProps) {
+  return (
+    <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+      <div className="text-xs font-medium text-slate-500">{label}</div>
+      <div className="mt-1 text-sm font-semibold text-slate-950">{value}</div>
+    </div>
   )
 }
 

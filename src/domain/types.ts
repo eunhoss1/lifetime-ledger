@@ -99,10 +99,37 @@ export interface MonthlyClosingTotals {
   remaining: number
 }
 
+export interface MonthlyClosingCategorySummary {
+  categoryId: EntityId
+  categoryName: string
+  type: TransactionType
+  expenseRole?: ExpenseRole
+  incomeTotal: number
+  expenseTotal: number
+  transactionCount: number
+}
+
+export interface MonthlyClosingAccountSummary {
+  accountId: EntityId
+  accountName: string
+  incomeTotal: number
+  expenseTotal: number
+  transactionCount: number
+}
+
 export interface MonthlyClosing extends EntityBase {
   monthKey: MonthKey
   status: MonthlyClosingStatus
   totals: MonthlyClosingTotals
+  incomeTotal: number
+  expenseTotal: number
+  fixedExpenseTotal: number
+  variableExpenseTotal: number
+  savingInvestmentTotal: number
+  remaining: number
+  transactionCount: number
+  categorySummaries: MonthlyClosingCategorySummary[]
+  accountSummaries: MonthlyClosingAccountSummary[]
   note?: string
   closedAt?: ISODateTimeString
   reopenedAt?: ISODateTimeString

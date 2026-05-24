@@ -14,6 +14,7 @@ import type {
   Transaction,
 } from '../domain/types'
 import { db, type LedgerDatabase } from '../db/schema'
+import { assertMonthOpen } from './monthlyClosings'
 
 export type CreateTransactionInput = TransactionInput
 export type UpdateTransactionPatch = TransactionPatch
@@ -44,12 +45,15 @@ export async function createTransaction(
     database.transactions,
     database.categories,
     database.accounts,
+    database.monthlyClosings,
     async () => {
       const [category, account] = await Promise.all([
         getUsableCategory(input.categoryId, database),
         getUsableAccount(input.accountId, database),
       ])
       const normalized = normalizeTransactionInput(input, category)
+      await assertMonthOpen(normalized.monthKey, database)
+
       const now = new Date().toISOString()
       const transaction: Transaction = {
         id: crypto.randomUUID(),
@@ -83,6 +87,7 @@ export async function updateTransaction(
     database.transactions,
     database.categories,
     database.accounts,
+    database.monthlyClosings,
     async () => {
       const existing = await database.transactions.get(id)
 
@@ -97,6 +102,9 @@ export async function updateTransaction(
         getUsableAccount(nextAccountId, database),
       ])
       const normalized = normalizeTransactionPatch(existing, patch, category)
+      await assertMonthOpen(existing.monthKey, database)
+      await assertMonthOpen(normalized.monthKey, database)
+
       const updated: Transaction = {
         ...existing,
         ...normalized,
@@ -115,12 +123,18 @@ export async function softDeleteTransaction(
   id: EntityId,
   database: LedgerDatabase = db,
 ): Promise<Transaction> {
-  return database.transaction('rw', database.transactions, async () => {
+  return database.transaction(
+    'rw',
+    database.transactions,
+    database.monthlyClosings,
+    async () => {
     const existing = await database.transactions.get(id)
 
     if (!existing || existing.deletedAt) {
       throw new Error('삭제할 거래를 찾을 수 없습니다.')
     }
+
+    await assertMonthOpen(existing.monthKey, database)
 
     const timestamp = new Date().toISOString()
     const deleted: Transaction = {
@@ -133,7 +147,8 @@ export async function softDeleteTransaction(
     await database.transactions.put(deleted)
 
     return deleted
-  })
+    },
+  )
 }
 
 export async function getMonthlyTransactionSummary(

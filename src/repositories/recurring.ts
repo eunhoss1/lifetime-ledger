@@ -17,6 +17,7 @@ import type {
   Transaction,
 } from '../domain/types'
 import { db, type LedgerDatabase } from '../db/schema'
+import { assertMonthOpen } from './monthlyClosings'
 
 export type CreateRecurringItemInput = RecurringItemInput
 export type UpdateRecurringItemPatch = RecurringItemPatch
@@ -182,8 +183,11 @@ export async function applyRecurringItemsForMonth(
       database.transactions,
       database.categories,
       database.accounts,
+      database.monthlyClosings,
     ],
     async () => {
+      await assertMonthOpen(monthKey, database)
+
       const idFilter = recurringItemIds ? new Set(recurringItemIds) : undefined
       const items = (await listActiveRecurringItems(database)).filter(
         (item) =>
