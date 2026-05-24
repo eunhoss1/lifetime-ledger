@@ -7,10 +7,23 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Environment
+.env
+.env.*
+!.env.example
+
 node_modules
 dist
 dist-ssr
 *.local
+
+# Local ledger exports and backups
+backups/
+exports/
+*.backup.json
+*-backup.json
+*.ledger.json
+*.csv
 
 # Editor directories and files
 .vscode/*

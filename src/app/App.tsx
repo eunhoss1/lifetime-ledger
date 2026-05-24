@@ -1,23 +1,37 @@
-import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react'
+import {
+  type FormEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
 import { getCurrentMonthInfo, toDateKey } from '../domain/date'
 import { formatKrwAmount } from '../domain/money'
 import type {
   Account,
   Category,
   MonthlyClosingTotals,
+  RecurringScheduleType,
   Transaction,
   TransactionType,
 } from '../domain/types'
 import {
+  applyRecurringItemsForMonth,
+  archiveRecurringItem,
+  createRecurringItem,
   createTransaction,
   getMonthlyTransactionSummary,
   initializeLedgerRepository,
   listActiveAccounts,
   listActiveCategories,
+  listActiveRecurringItems,
   listTransactionsByMonth,
+  previewRecurringItemsForMonth,
   softDeleteTransaction,
   updateTransaction,
   type LedgerBootstrapStatus,
+  type RecurringPreviewItem,
 } from '../repositories'
 
 interface LedgerViewData {
@@ -25,6 +39,8 @@ interface LedgerViewData {
   accounts: Account[]
   transactions: Transaction[]
   summary: MonthlyClosingTotals
+  recurringItems: Awaited<ReturnType<typeof listActiveRecurringItems>>
+  recurringPreviews: RecurringPreviewItem[]
 }
 
 interface TransactionFormState {
@@ -36,6 +52,18 @@ interface TransactionFormState {
   memo: string
 }
 
+interface RecurringFormState {
+  name: string
+  amount: string
+  categoryId: string
+  accountId: string
+  scheduleType: RecurringScheduleType
+  dayOfMonth: string
+  startMonth: string
+  endMonth: string
+  memoTemplate: string
+}
+
 type AppState =
   | { status: 'loading' }
   | { status: 'ready'; bootstrap: LedgerBootstrapStatus; data: LedgerViewData }
@@ -43,24 +71,55 @@ type AppState =
 
 function App() {
   const currentMonth = useMemo(() => getCurrentMonthInfo(), [])
+  const today = useMemo(() => toDateKey(), [])
   const [appState, setAppState] = useState<AppState>({ status: 'loading' })
-  const [form, setForm] = useState<TransactionFormState>(() =>
-    createEmptyForm(toDateKey()),
+  const [transactionForm, setTransactionForm] = useState<TransactionFormState>(() =>
+    createEmptyTransactionForm(today),
+  )
+  const [recurringForm, setRecurringForm] = useState<RecurringFormState>(() =>
+    createEmptyRecurringForm(currentMonth.monthKey),
   )
   const [editingId, setEditingId] = useState<string | null>(null)
   const [message, setMessage] = useState<string>('')
+  const [recurringMessage, setRecurringMessage] = useState<string>('')
 
-  async function refreshData(bootstrap: LedgerBootstrapStatus) {
-    const [categories, accounts, transactions, summary] = await Promise.all([
+  const loadData = useCallback(async (): Promise<LedgerViewData> => {
+    const [
+      categories,
+      accounts,
+      transactions,
+      summary,
+      recurringItems,
+      recurringPreviews,
+    ] = await Promise.all([
       listActiveCategories(),
       listActiveAccounts(),
       listTransactionsByMonth(currentMonth.monthKey),
       getMonthlyTransactionSummary(currentMonth.monthKey),
+      listActiveRecurringItems(),
+      previewRecurringItemsForMonth(currentMonth.monthKey),
     ])
-    const data = { categories, accounts, transactions, summary }
+
+    return {
+      categories,
+      accounts,
+      transactions,
+      summary,
+      recurringItems,
+      recurringPreviews,
+    }
+  }, [currentMonth.monthKey])
+
+  async function refreshData(bootstrap: LedgerBootstrapStatus) {
+    const data = await loadData()
 
     setAppState({ status: 'ready', bootstrap, data })
-    setForm((current) => ensureFormDefaults(current, categories, accounts))
+    setTransactionForm((current) =>
+      ensureTransactionFormDefaults(current, data.categories, data.accounts),
+    )
+    setRecurringForm((current) =>
+      ensureRecurringFormDefaults(current, data.categories, data.accounts),
+    )
   }
 
   useEffect(() => {
@@ -72,17 +131,16 @@ function App() {
           return
         }
 
-        const [categories, accounts, transactions, summary] = await Promise.all([
-          listActiveCategories(),
-          listActiveAccounts(),
-          listTransactionsByMonth(currentMonth.monthKey),
-          getMonthlyTransactionSummary(currentMonth.monthKey),
-        ])
-        const data = { categories, accounts, transactions, summary }
+        const data = await loadData()
 
         if (isMounted) {
           setAppState({ status: 'ready', bootstrap, data })
-          setForm((current) => ensureFormDefaults(current, categories, accounts))
+          setTransactionForm((current) =>
+            ensureTransactionFormDefaults(current, data.categories, data.accounts),
+          )
+          setRecurringForm((current) =>
+            ensureRecurringFormDefaults(current, data.categories, data.accounts),
+          )
         }
       })
       .catch((error: unknown) => {
@@ -100,7 +158,7 @@ function App() {
     return () => {
       isMounted = false
     }
-  }, [currentMonth.monthKey])
+  }, [currentMonth.monthKey, loadData])
 
   if (appState.status === 'loading') {
     return <PageShell currentMonth={currentMonth.monthKey}>초기화 중입니다.</PageShell>
@@ -117,40 +175,39 @@ function App() {
   }
 
   const { bootstrap, data } = appState
-  const categoryOptions = data.categories.filter(
-    (category) => category.type === form.type,
+  const transactionCategoryOptions = data.categories.filter(
+    (category) => category.type === transactionForm.type,
+  )
+  const expenseCategoryOptions = data.categories.filter(
+    (category) => category.type === 'expense',
   )
   const categoryById = new Map(
     data.categories.map((category) => [category.id, category]),
   )
   const accountById = new Map(data.accounts.map((account) => [account.id, account]))
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleTransactionSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setMessage('')
 
-    if (appState.status !== 'ready') {
-      return
-    }
-
     try {
       if (editingId) {
-        await updateTransaction(editingId, form)
+        await updateTransaction(editingId, transactionForm)
         setMessage('거래를 수정했습니다.')
       } else {
-        await createTransaction(form)
+        await createTransaction(transactionForm)
         setMessage('거래를 추가했습니다.')
       }
 
       setEditingId(null)
-      setForm(createDefaultForm(data.categories, data.accounts, toDateKey()))
+      setTransactionForm(createDefaultTransactionForm(data.categories, data.accounts, today))
       await refreshData(bootstrap)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '거래 저장에 실패했습니다.')
     }
   }
 
-  async function handleDelete(id: string) {
+  async function handleDeleteTransaction(id: string) {
     setMessage('')
 
     try {
@@ -162,10 +219,77 @@ function App() {
     }
   }
 
+  async function handleRecurringSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setRecurringMessage('')
+
+    try {
+      await createRecurringItem({
+        name: recurringForm.name,
+        type: 'expense',
+        amount: recurringForm.amount,
+        categoryId: recurringForm.categoryId,
+        accountId: recurringForm.accountId,
+        memoTemplate: recurringForm.memoTemplate,
+        scheduleType: recurringForm.scheduleType,
+        dayOfMonth:
+          recurringForm.scheduleType === 'dayOfMonth'
+            ? recurringForm.dayOfMonth
+            : undefined,
+        startMonth: recurringForm.startMonth,
+        endMonth: recurringForm.endMonth || undefined,
+        active: true,
+      })
+      setRecurringMessage('반복지출을 추가했습니다.')
+      setRecurringForm(createDefaultRecurringForm(data.categories, data.accounts, currentMonth.monthKey))
+      await refreshData(bootstrap)
+    } catch (error) {
+      setRecurringMessage(
+        error instanceof Error ? error.message : '반복지출 저장에 실패했습니다.',
+      )
+    }
+  }
+
+  async function handleApplyRecurring() {
+    setRecurringMessage('')
+
+    if (data.recurringPreviews.length === 0) {
+      setRecurringMessage('이번 달에 반영할 반복지출이 없습니다.')
+      return
+    }
+
+    try {
+      const created = await applyRecurringItemsForMonth(
+        currentMonth.monthKey,
+        data.recurringPreviews.map((preview) => preview.item.id),
+      )
+      setRecurringMessage(`${created.length.toString()}건의 반복지출을 반영했습니다.`)
+      await refreshData(bootstrap)
+    } catch (error) {
+      setRecurringMessage(
+        error instanceof Error ? error.message : '반복지출 반영에 실패했습니다.',
+      )
+    }
+  }
+
+  async function handleArchiveRecurring(id: string) {
+    setRecurringMessage('')
+
+    try {
+      await archiveRecurringItem(id)
+      setRecurringMessage('반복지출을 보관했습니다.')
+      await refreshData(bootstrap)
+    } catch (error) {
+      setRecurringMessage(
+        error instanceof Error ? error.message : '반복지출 보관에 실패했습니다.',
+      )
+    }
+  }
+
   function startEdit(transaction: Transaction) {
     setEditingId(transaction.id)
     setMessage('거래를 수정 중입니다.')
-    setForm({
+    setTransactionForm({
       type: transaction.type,
       date: transaction.date,
       amount: transaction.amount.toString(),
@@ -178,7 +302,7 @@ function App() {
   function cancelEdit() {
     setEditingId(null)
     setMessage('')
-    setForm(createDefaultForm(data.categories, data.accounts, toDateKey()))
+    setTransactionForm(createDefaultTransactionForm(data.categories, data.accounts, today))
   }
 
   return (
@@ -214,20 +338,20 @@ function App() {
           </p>
         </div>
 
-        <form className="mt-5 grid gap-4" onSubmit={handleSubmit}>
+        <form className="mt-5 grid gap-4" onSubmit={handleTransactionSubmit}>
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="grid gap-1 text-sm font-medium text-slate-700">
               유형
               <select
                 className="rounded-md border border-slate-300 px-3 py-2"
-                value={form.type}
+                value={transactionForm.type}
                 onChange={(event) => {
                   const nextType = event.target.value as TransactionType
                   const nextCategory = data.categories.find(
                     (category) => category.type === nextType,
                   )
 
-                  setForm((current) => ({
+                  setTransactionForm((current) => ({
                     ...current,
                     type: nextType,
                     categoryId: nextCategory?.id ?? '',
@@ -244,9 +368,12 @@ function App() {
               <input
                 className="rounded-md border border-slate-300 px-3 py-2"
                 type="date"
-                value={form.date}
+                value={transactionForm.date}
                 onChange={(event) =>
-                  setForm((current) => ({ ...current, date: event.target.value }))
+                  setTransactionForm((current) => ({
+                    ...current,
+                    date: event.target.value,
+                  }))
                 }
               />
             </label>
@@ -257,9 +384,12 @@ function App() {
                 className="rounded-md border border-slate-300 px-3 py-2"
                 inputMode="numeric"
                 placeholder="예: 12000"
-                value={form.amount}
+                value={transactionForm.amount}
                 onChange={(event) =>
-                  setForm((current) => ({ ...current, amount: event.target.value }))
+                  setTransactionForm((current) => ({
+                    ...current,
+                    amount: event.target.value,
+                  }))
                 }
               />
             </label>
@@ -268,15 +398,15 @@ function App() {
               카테고리
               <select
                 className="rounded-md border border-slate-300 px-3 py-2"
-                value={form.categoryId}
+                value={transactionForm.categoryId}
                 onChange={(event) =>
-                  setForm((current) => ({
+                  setTransactionForm((current) => ({
                     ...current,
                     categoryId: event.target.value,
                   }))
                 }
               >
-                {categoryOptions.map((category) => (
+                {transactionCategoryOptions.map((category) => (
                   <option key={category.id} value={category.id}>
                     {category.name}
                   </option>
@@ -288,9 +418,9 @@ function App() {
               계좌
               <select
                 className="rounded-md border border-slate-300 px-3 py-2"
-                value={form.accountId}
+                value={transactionForm.accountId}
                 onChange={(event) =>
-                  setForm((current) => ({
+                  setTransactionForm((current) => ({
                     ...current,
                     accountId: event.target.value,
                   }))
@@ -309,9 +439,12 @@ function App() {
               <input
                 className="rounded-md border border-slate-300 px-3 py-2"
                 placeholder="선택 입력"
-                value={form.memo}
+                value={transactionForm.memo}
                 onChange={(event) =>
-                  setForm((current) => ({ ...current, memo: event.target.value }))
+                  setTransactionForm((current) => ({
+                    ...current,
+                    memo: event.target.value,
+                  }))
                 }
               />
             </label>
@@ -339,6 +472,257 @@ function App() {
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-lg font-semibold text-slate-950">반복지출</h2>
+          <p className="text-sm text-slate-500">
+            매월 고정지출을 등록하고, 이번 달 거래에 사용자 확인 후 반영합니다.
+          </p>
+        </div>
+
+        <form className="mt-5 grid gap-4" onSubmit={handleRecurringSubmit}>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <label className="grid gap-1 text-sm font-medium text-slate-700">
+              이름
+              <input
+                className="rounded-md border border-slate-300 px-3 py-2"
+                placeholder="예: 월세"
+                value={recurringForm.name}
+                onChange={(event) =>
+                  setRecurringForm((current) => ({
+                    ...current,
+                    name: event.target.value,
+                  }))
+                }
+              />
+            </label>
+
+            <label className="grid gap-1 text-sm font-medium text-slate-700">
+              금액
+              <input
+                className="rounded-md border border-slate-300 px-3 py-2"
+                inputMode="numeric"
+                placeholder="예: 500000"
+                value={recurringForm.amount}
+                onChange={(event) =>
+                  setRecurringForm((current) => ({
+                    ...current,
+                    amount: event.target.value,
+                  }))
+                }
+              />
+            </label>
+
+            <label className="grid gap-1 text-sm font-medium text-slate-700">
+              카테고리
+              <select
+                className="rounded-md border border-slate-300 px-3 py-2"
+                value={recurringForm.categoryId}
+                onChange={(event) =>
+                  setRecurringForm((current) => ({
+                    ...current,
+                    categoryId: event.target.value,
+                  }))
+                }
+              >
+                {expenseCategoryOptions.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="grid gap-1 text-sm font-medium text-slate-700">
+              계좌
+              <select
+                className="rounded-md border border-slate-300 px-3 py-2"
+                value={recurringForm.accountId}
+                onChange={(event) =>
+                  setRecurringForm((current) => ({
+                    ...current,
+                    accountId: event.target.value,
+                  }))
+                }
+              >
+                {data.accounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="grid gap-1 text-sm font-medium text-slate-700">
+              반복 방식
+              <select
+                className="rounded-md border border-slate-300 px-3 py-2"
+                value={recurringForm.scheduleType}
+                onChange={(event) =>
+                  setRecurringForm((current) => ({
+                    ...current,
+                    scheduleType: event.target.value as RecurringScheduleType,
+                  }))
+                }
+              >
+                <option value="dayOfMonth">매월 N일</option>
+                <option value="lastDayOfMonth">매월 말일</option>
+              </select>
+            </label>
+
+            {recurringForm.scheduleType === 'dayOfMonth' ? (
+              <label className="grid gap-1 text-sm font-medium text-slate-700">
+                반복일
+                <input
+                  className="rounded-md border border-slate-300 px-3 py-2"
+                  inputMode="numeric"
+                  max="31"
+                  min="1"
+                  placeholder="1~31"
+                  value={recurringForm.dayOfMonth}
+                  onChange={(event) =>
+                    setRecurringForm((current) => ({
+                      ...current,
+                      dayOfMonth: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            ) : null}
+
+            <label className="grid gap-1 text-sm font-medium text-slate-700">
+              시작월
+              <input
+                className="rounded-md border border-slate-300 px-3 py-2"
+                type="month"
+                value={recurringForm.startMonth}
+                onChange={(event) =>
+                  setRecurringForm((current) => ({
+                    ...current,
+                    startMonth: event.target.value,
+                  }))
+                }
+              />
+            </label>
+
+            <label className="grid gap-1 text-sm font-medium text-slate-700">
+              종료월
+              <input
+                className="rounded-md border border-slate-300 px-3 py-2"
+                type="month"
+                value={recurringForm.endMonth}
+                onChange={(event) =>
+                  setRecurringForm((current) => ({
+                    ...current,
+                    endMonth: event.target.value,
+                  }))
+                }
+              />
+            </label>
+
+            <label className="grid gap-1 text-sm font-medium text-slate-700">
+              메모
+              <input
+                className="rounded-md border border-slate-300 px-3 py-2"
+                placeholder="선택 입력"
+                value={recurringForm.memoTemplate}
+                onChange={(event) =>
+                  setRecurringForm((current) => ({
+                    ...current,
+                    memoTemplate: event.target.value,
+                  }))
+                }
+              />
+            </label>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+              type="submit"
+            >
+              반복지출 추가
+            </button>
+            <button
+              className="rounded-md border border-teal-700 px-4 py-2 text-sm font-semibold text-teal-700"
+              type="button"
+              onClick={handleApplyRecurring}
+            >
+              이번 달 고정지출 반영
+            </button>
+            {recurringMessage ? (
+              <p className="text-sm text-slate-600">{recurringMessage}</p>
+            ) : null}
+          </div>
+        </form>
+
+        <div className="mt-6 grid gap-5 lg:grid-cols-2">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-950">
+              이번 달 미반영 항목
+            </h3>
+            {data.recurringPreviews.length === 0 ? (
+              <p className="mt-3 text-sm text-slate-500">반영할 항목이 없습니다.</p>
+            ) : (
+              <ul className="mt-3 space-y-2">
+                {data.recurringPreviews.map((preview) => (
+                  <li
+                    className="rounded-md border border-slate-200 p-3 text-sm"
+                    key={preview.item.id}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-medium text-slate-900">
+                        {preview.item.name}
+                      </span>
+                      <span className="text-slate-500">{preview.scheduledDate}</span>
+                    </div>
+                    <div className="mt-1 text-slate-600">
+                      {formatKrwAmount(preview.item.amount)} · {preview.category.name} ·{' '}
+                      {preview.account.name}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold text-slate-950">
+              등록된 반복지출
+            </h3>
+            {data.recurringItems.length === 0 ? (
+              <p className="mt-3 text-sm text-slate-500">
+                아직 등록된 반복지출이 없습니다.
+              </p>
+            ) : (
+              <ul className="mt-3 space-y-2">
+                {data.recurringItems.map((item) => (
+                  <li
+                    className="flex items-center justify-between gap-3 rounded-md border border-slate-200 p-3 text-sm"
+                    key={item.id}
+                  >
+                    <div>
+                      <div className="font-medium text-slate-900">{item.name}</div>
+                      <div className="mt-1 text-slate-600">
+                        {formatKrwAmount(item.amount)} · {item.startMonth}
+                        {item.endMonth ? ` ~ ${item.endMonth}` : ''}
+                      </div>
+                    </div>
+                    <button
+                      className="shrink-0 rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700"
+                      type="button"
+                      onClick={() => handleArchiveRecurring(item.id)}
+                    >
+                      보관
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-950">현재 월 거래 목록</h2>
         {data.transactions.length === 0 ? (
           <p className="mt-4 text-sm text-slate-500">아직 입력된 거래가 없습니다.</p>
@@ -362,6 +746,7 @@ function App() {
                     <td className="py-3 pr-3 text-slate-700">{transaction.date}</td>
                     <td className="py-3 pr-3 text-slate-700">
                       {transaction.type === 'income' ? '수입' : '지출'}
+                      {transaction.source === 'recurring' ? ' · 반복' : ''}
                     </td>
                     <td className="py-3 pr-3 text-right font-medium text-slate-950">
                       {formatKrwAmount(transaction.amount)}
@@ -387,7 +772,7 @@ function App() {
                         <button
                           className="rounded-md border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700"
                           type="button"
-                          onClick={() => handleDelete(transaction.id)}
+                          onClick={() => handleDeleteTransaction(transaction.id)}
                         >
                           삭제
                         </button>
@@ -418,7 +803,7 @@ function PageShell({ children, currentMonth }: PageShellProps) {
           Lifetime Ledger
         </h1>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
-          현재 월({currentMonth}) 기준으로 수입과 지출을 입력하고 합계를 확인합니다.
+          현재 월({currentMonth}) 기준으로 수입, 지출, 반복지출을 관리합니다.
         </p>
       </header>
       {children}
@@ -450,11 +835,7 @@ function SummaryCard({ label, amount, tone }: SummaryCardProps) {
   )
 }
 
-function formatSignedKrwAmount(amount: number): string {
-  return amount < 0 ? `-${formatKrwAmount(Math.abs(amount))}` : formatKrwAmount(amount)
-}
-
-function createEmptyForm(date: string): TransactionFormState {
+function createEmptyTransactionForm(date: string): TransactionFormState {
   return {
     type: 'expense',
     date,
@@ -465,15 +846,19 @@ function createEmptyForm(date: string): TransactionFormState {
   }
 }
 
-function createDefaultForm(
+function createDefaultTransactionForm(
   categories: Category[],
   accounts: Account[],
   date: string,
 ): TransactionFormState {
-  return ensureFormDefaults(createEmptyForm(date), categories, accounts)
+  return ensureTransactionFormDefaults(
+    createEmptyTransactionForm(date),
+    categories,
+    accounts,
+  )
 }
 
-function ensureFormDefaults(
+function ensureTransactionFormDefaults(
   form: TransactionFormState,
   categories: Category[],
   accounts: Account[],
@@ -490,6 +875,54 @@ function ensureFormDefaults(
     categoryId: categoryStillValid ? form.categoryId : (fallbackCategory?.id ?? ''),
     accountId: accountStillValid ? form.accountId : (fallbackAccount?.id ?? ''),
   }
+}
+
+function createEmptyRecurringForm(monthKey: string): RecurringFormState {
+  return {
+    name: '',
+    amount: '',
+    categoryId: '',
+    accountId: '',
+    scheduleType: 'dayOfMonth',
+    dayOfMonth: '1',
+    startMonth: monthKey,
+    endMonth: '',
+    memoTemplate: '',
+  }
+}
+
+function createDefaultRecurringForm(
+  categories: Category[],
+  accounts: Account[],
+  monthKey: string,
+): RecurringFormState {
+  return ensureRecurringFormDefaults(
+    createEmptyRecurringForm(monthKey),
+    categories,
+    accounts,
+  )
+}
+
+function ensureRecurringFormDefaults(
+  form: RecurringFormState,
+  categories: Category[],
+  accounts: Account[],
+): RecurringFormState {
+  const expenseCategories = categories.filter((category) => category.type === 'expense')
+  const categoryStillValid = expenseCategories.some(
+    (category) => category.id === form.categoryId,
+  )
+  const accountStillValid = accounts.some((account) => account.id === form.accountId)
+
+  return {
+    ...form,
+    categoryId: categoryStillValid ? form.categoryId : (expenseCategories[0]?.id ?? ''),
+    accountId: accountStillValid ? form.accountId : (accounts[0]?.id ?? ''),
+  }
+}
+
+function formatSignedKrwAmount(amount: number): string {
+  return amount < 0 ? `-${formatKrwAmount(Math.abs(amount))}` : formatKrwAmount(amount)
 }
 
 export default App

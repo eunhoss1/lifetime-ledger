@@ -12,3 +12,16 @@ export type {
   CreateTransactionInput,
   UpdateTransactionPatch,
 } from './transactions'
+export {
+  applyRecurringItemsForMonth,
+  archiveRecurringItem,
+  createRecurringItem,
+  listActiveRecurringItems,
+  previewRecurringItemsForMonth,
+  updateRecurringItem,
+} from './recurring'
+export type {
+  CreateRecurringItemInput,
+  RecurringPreviewItem,
+  UpdateRecurringItemPatch,
+} from './recurring'

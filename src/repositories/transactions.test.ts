@@ -12,9 +12,11 @@ describe('transaction repository', () => {
   let database: LedgerDatabase
 
   beforeEach(async () => {
-    database = new LedgerDatabase()
+    const databaseName = `lifetime-ledger-transactions-test-${crypto.randomUUID()}`
+    database = new LedgerDatabase(databaseName)
     await database.delete()
-    database = new LedgerDatabase()
+    database.close()
+    database = new LedgerDatabase(databaseName)
     await ensureSeedData(database)
   })
 

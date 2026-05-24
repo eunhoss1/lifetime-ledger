@@ -21,8 +21,8 @@ export class LedgerDatabase extends Dexie {
   monthlyClosings!: EntityTable<MonthlyClosing, 'id'>
   appSettings!: EntityTable<AppSettings, 'id'>
 
-  constructor() {
-    super(DB_NAME)
+  constructor(name = DB_NAME) {
+    super(name)
 
     this.version(DB_VERSION).stores({
       transactions:

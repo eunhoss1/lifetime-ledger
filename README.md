@@ -17,11 +17,18 @@ npm run lint
 npm run build
 ```
 
-## 1단계 범위
+## 현재 구현 상태
 
-- Vite + React + TypeScript scaffold
-- Tailwind CSS와 vite-plugin-pwa 기본 설정
-- Dexie 스키마 v1
-- 기본 카테고리/계좌 seed 데이터
-- 날짜와 KRW 금액 유틸
-- IndexedDB와 seed 상태를 보여주는 최소 시작 화면
+- 1단계: Vite + React + TypeScript, Tailwind CSS, vite-plugin-pwa, Dexie 스키마 v1, 기본 카테고리/계좌 seed, 날짜/금액 유틸
+- 2단계: 수입/지출 거래 CRUD, 현재 월 거래 목록, 월별 요약 카드, 거래 repository/domain 테스트
+- 3단계: 반복지출 등록, 현재 월 미반영 반복지출 미리보기, 사용자 확인 후 이번 달 거래로 반영, 중복 생성 방지
+
+## 아직 구현하지 않은 범위
+
+- 월마감
+- JSON 백업/복구
+- CSV export
+- Playwright E2E 테스트
+- Supabase/Firebase 동기화
+- React Router
+- 차트
