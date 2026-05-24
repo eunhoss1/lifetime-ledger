@@ -12,6 +12,14 @@ export function toMonthKey(date = new Date()): MonthKey {
   return format(date, 'yyyy-MM')
 }
 
+export function dateKeyToMonthKey(dateKey: ISODateString): MonthKey {
+  if (!isDateKey(dateKey)) {
+    throw new Error(`Invalid date key: ${dateKey}`)
+  }
+
+  return dateKey.slice(0, 7)
+}
+
 export function isDateKey(value: string): value is ISODateString {
   if (!DATE_KEY_PATTERN.test(value)) {
     return false
