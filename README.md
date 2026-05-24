@@ -25,6 +25,7 @@ npm run build
 - 4단계: 월마감 snapshot 저장, 닫힌 월 거래/반복지출 반영 차단, 다시 열기, 재마감
 - 5단계: 전체 JSON 백업 내보내기, 백업 파일 검증/요약, 확인 문구 기반 전체 복구
 - 6단계: 현재 월/전체 거래 CSV export, 카테고리/계좌 표시명 포함, soft deleted 거래 기본 제외
+- MVP 안정화: 카테고리/계좌 최소 관리 UI, 보관 처리, 기존 거래 표시명 유지
 
 ## 아직 구현하지 않은 범위
 
@@ -33,3 +34,5 @@ npm run build
 - Supabase/Firebase 동기화
 - React Router
 - 차트
+- 자산/배당 관리
+- 예산 고도화

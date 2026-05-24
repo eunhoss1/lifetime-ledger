@@ -16,6 +16,7 @@ import { getCurrentMonthInfo, toDateKey } from '../domain/date'
 import { formatKrwAmount } from '../domain/money'
 import type {
   Account,
+  AccountKind,
   Category,
   MonthlyClosing,
   MonthlyClosingTotals,
@@ -25,9 +26,13 @@ import type {
 } from '../domain/types'
 import {
   applyRecurringItemsForMonth,
+  archiveAccount,
   archiveRecurringItem,
+  archiveCategory,
   closeMonth,
   CLOSED_MONTH_MESSAGE,
+  createAccount,
+  createCategory,
   createFullBackup,
   createRecurringItem,
   createTransaction,
@@ -38,14 +43,18 @@ import {
   getMonthlyTransactionSummary,
   initializeLedgerRepository,
   isMonthClosed,
+  listAccounts,
   listActiveAccounts,
   listActiveCategories,
   listActiveRecurringItems,
+  listCategories,
   listTransactionsByMonth,
   previewRecurringItemsForMonth,
   reopenMonth,
   restoreFullBackup,
   softDeleteTransaction,
+  updateAccountName,
+  updateCategoryName,
   updateTransaction,
   validateBackupJson,
   type BackupRoot,
@@ -57,6 +66,8 @@ import {
 interface LedgerViewData {
   categories: Category[]
   accounts: Account[]
+  allCategories: Category[]
+  allAccounts: Account[]
   transactions: Transaction[]
   summary: MonthlyClosingTotals
   recurringItems: Awaited<ReturnType<typeof listActiveRecurringItems>>
@@ -111,11 +122,18 @@ function App() {
   const [backupSummary, setBackupSummary] = useState<BackupSummary | null>(null)
   const [restoreConfirmation, setRestoreConfirmation] = useState<string>('')
   const [csvMessage, setCsvMessage] = useState<string>('')
+  const [categoryName, setCategoryName] = useState<string>('')
+  const [categoryType, setCategoryType] = useState<TransactionType>('expense')
+  const [accountName, setAccountName] = useState<string>('')
+  const [accountKind, setAccountKind] = useState<AccountKind>('cash')
+  const [settingsMessage, setSettingsMessage] = useState<string>('')
 
   const loadData = useCallback(async (): Promise<LedgerViewData> => {
     const [
       categories,
       accounts,
+      allCategories,
+      allAccounts,
       transactions,
       summary,
       recurringItems,
@@ -125,6 +143,8 @@ function App() {
     ] = await Promise.all([
       listActiveCategories(),
       listActiveAccounts(),
+      listCategories(),
+      listAccounts(),
       listTransactionsByMonth(currentMonth.monthKey),
       getMonthlyTransactionSummary(currentMonth.monthKey),
       listActiveRecurringItems(),
@@ -136,6 +156,8 @@ function App() {
     return {
       categories,
       accounts,
+      allCategories,
+      allAccounts,
       transactions,
       summary,
       recurringItems,
@@ -219,9 +241,11 @@ function App() {
     (category) => category.type === 'expense',
   )
   const categoryById = new Map(
-    data.categories.map((category) => [category.id, category]),
+    data.allCategories.map((category) => [category.id, category]),
   )
-  const accountById = new Map(data.accounts.map((account) => [account.id, account]))
+  const accountById = new Map(
+    data.allAccounts.map((account) => [account.id, account]),
+  )
 
   async function handleTransactionSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -494,6 +518,106 @@ function App() {
     }
   }
 
+  async function handleCreateCategory(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setSettingsMessage('')
+
+    try {
+      await createCategory({ name: categoryName, type: categoryType })
+      setCategoryName('')
+      setSettingsMessage('카테고리를 추가했습니다.')
+      await refreshData(bootstrap)
+    } catch (error) {
+      setSettingsMessage(
+        error instanceof Error ? error.message : '카테고리 추가에 실패했습니다.',
+      )
+    }
+  }
+
+  async function handleRenameCategory(category: Category) {
+    const nextName = window.prompt('새 카테고리 이름', category.name)
+
+    if (nextName === null) {
+      return
+    }
+
+    setSettingsMessage('')
+
+    try {
+      await updateCategoryName(category.id, nextName)
+      setSettingsMessage('카테고리 이름을 수정했습니다.')
+      await refreshData(bootstrap)
+    } catch (error) {
+      setSettingsMessage(
+        error instanceof Error ? error.message : '카테고리 수정에 실패했습니다.',
+      )
+    }
+  }
+
+  async function handleArchiveCategory(category: Category) {
+    setSettingsMessage('')
+
+    try {
+      await archiveCategory(category.id)
+      setSettingsMessage('카테고리를 보관했습니다.')
+      await refreshData(bootstrap)
+    } catch (error) {
+      setSettingsMessage(
+        error instanceof Error ? error.message : '카테고리 보관에 실패했습니다.',
+      )
+    }
+  }
+
+  async function handleCreateAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setSettingsMessage('')
+
+    try {
+      await createAccount({ name: accountName, kind: accountKind })
+      setAccountName('')
+      setSettingsMessage('계좌를 추가했습니다.')
+      await refreshData(bootstrap)
+    } catch (error) {
+      setSettingsMessage(
+        error instanceof Error ? error.message : '계좌 추가에 실패했습니다.',
+      )
+    }
+  }
+
+  async function handleRenameAccount(account: Account) {
+    const nextName = window.prompt('새 계좌 이름', account.name)
+
+    if (nextName === null) {
+      return
+    }
+
+    setSettingsMessage('')
+
+    try {
+      await updateAccountName(account.id, nextName)
+      setSettingsMessage('계좌 이름을 수정했습니다.')
+      await refreshData(bootstrap)
+    } catch (error) {
+      setSettingsMessage(
+        error instanceof Error ? error.message : '계좌 수정에 실패했습니다.',
+      )
+    }
+  }
+
+  async function handleArchiveAccount(account: Account) {
+    setSettingsMessage('')
+
+    try {
+      await archiveAccount(account.id)
+      setSettingsMessage('계좌를 보관했습니다.')
+      await refreshData(bootstrap)
+    } catch (error) {
+      setSettingsMessage(
+        error instanceof Error ? error.message : '계좌 보관에 실패했습니다.',
+      )
+    }
+  }
+
   return (
     <PageShell currentMonth={currentMonth.monthKey}>
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -700,6 +824,152 @@ function App() {
           </button>
           {csvMessage ? <p className="text-sm text-slate-600">{csvMessage}</p> : null}
         </div>
+      </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-lg font-semibold text-slate-950">카테고리/계좌 관리</h2>
+          <p className="text-sm text-slate-500">
+            보관된 항목은 새 거래 입력에서 제외되지만, 기존 거래와 CSV에는 이름이 유지됩니다.
+          </p>
+        </div>
+
+        <div className="mt-5 grid gap-6 lg:grid-cols-2">
+          <div>
+            <form className="grid gap-3" onSubmit={handleCreateCategory}>
+              <h3 className="text-sm font-semibold text-slate-950">카테고리 추가</h3>
+              <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+                <input
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  placeholder="카테고리 이름"
+                  value={categoryName}
+                  onChange={(event) => setCategoryName(event.target.value)}
+                />
+                <select
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  value={categoryType}
+                  onChange={(event) =>
+                    setCategoryType(event.target.value as TransactionType)
+                  }
+                >
+                  <option value="expense">지출</option>
+                  <option value="income">수입</option>
+                </select>
+                <button
+                  className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+                  type="submit"
+                >
+                  추가
+                </button>
+              </div>
+            </form>
+
+            <div className="mt-4 space-y-2">
+              {data.allCategories.map((category) => (
+                <div
+                  className="flex items-center justify-between gap-3 rounded-md border border-slate-200 p-3 text-sm"
+                  key={category.id}
+                >
+                  <div>
+                    <div className="font-medium text-slate-900">{category.name}</div>
+                    <div className="mt-1 text-slate-500">
+                      {category.type === 'income' ? '수입' : '지출'}
+                      {category.isArchived ? ' · 보관됨' : ''}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700"
+                      type="button"
+                      onClick={() => handleRenameCategory(category)}
+                    >
+                      이름 수정
+                    </button>
+                    <button
+                      className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-300"
+                      disabled={category.isArchived}
+                      type="button"
+                      onClick={() => handleArchiveCategory(category)}
+                    >
+                      보관
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <form className="grid gap-3" onSubmit={handleCreateAccount}>
+              <h3 className="text-sm font-semibold text-slate-950">계좌 추가</h3>
+              <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+                <input
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  placeholder="계좌 이름"
+                  value={accountName}
+                  onChange={(event) => setAccountName(event.target.value)}
+                />
+                <select
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  value={accountKind}
+                  onChange={(event) =>
+                    setAccountKind(event.target.value as AccountKind)
+                  }
+                >
+                  <option value="cash">현금</option>
+                  <option value="debitCard">체크카드</option>
+                  <option value="creditCard">신용카드</option>
+                  <option value="bankAccount">은행계좌</option>
+                  <option value="other">기타</option>
+                </select>
+                <button
+                  className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+                  type="submit"
+                >
+                  추가
+                </button>
+              </div>
+            </form>
+
+            <div className="mt-4 space-y-2">
+              {data.allAccounts.map((account) => (
+                <div
+                  className="flex items-center justify-between gap-3 rounded-md border border-slate-200 p-3 text-sm"
+                  key={account.id}
+                >
+                  <div>
+                    <div className="font-medium text-slate-900">{account.name}</div>
+                    <div className="mt-1 text-slate-500">
+                      {formatAccountKind(account.kind)}
+                      {account.isArchived ? ' · 보관됨' : ''}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700"
+                      type="button"
+                      onClick={() => handleRenameAccount(account)}
+                    >
+                      이름 수정
+                    </button>
+                    <button
+                      className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-300"
+                      disabled={account.isArchived}
+                      type="button"
+                      onClick={() => handleArchiveAccount(account)}
+                    >
+                      보관
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {settingsMessage ? (
+          <p className="mt-4 text-sm text-slate-600">{settingsMessage}</p>
+        ) : null}
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
@@ -1317,6 +1587,18 @@ function ensureRecurringFormDefaults(
 
 function formatSignedKrwAmount(amount: number): string {
   return amount < 0 ? `-${formatKrwAmount(Math.abs(amount))}` : formatKrwAmount(amount)
+}
+
+function formatAccountKind(kind: AccountKind): string {
+  const labels: Record<AccountKind, string> = {
+    cash: '현금',
+    debitCard: '체크카드',
+    creditCard: '신용카드',
+    bankAccount: '은행계좌',
+    other: '기타',
+  }
+
+  return labels[kind]
 }
 
 function downloadTextFile(content: string, fileName: string, type: string) {

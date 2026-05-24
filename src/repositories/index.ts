@@ -1,6 +1,18 @@
 export { initializeLedgerRepository } from './bootstrap'
 export type { LedgerBootstrapStatus } from './bootstrap'
-export { listActiveAccounts, listActiveCategories } from './referenceData'
+export {
+  archiveAccount,
+  archiveCategory,
+  createAccount,
+  createCategory,
+  listAccounts,
+  listActiveAccounts,
+  listActiveCategories,
+  listCategories,
+  updateAccountName,
+  updateCategoryName,
+} from './referenceData'
+export type { CreateAccountInput, CreateCategoryInput } from './referenceData'
 export {
   createTransaction,
   getMonthlyTransactionSummary,
