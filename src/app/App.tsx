@@ -1,34 +1,22 @@
-import {
-  type FormEvent,
-  type ChangeEvent,
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react'
+import { type ChangeEvent, type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { createBackupFileName } from '../domain/backup'
 import {
   createAllTransactionsCsvFileName,
   createTransactionsCsvFileNameForMonth,
 } from '../domain/csv'
 import { getCurrentMonthInfo, toDateKey } from '../domain/date'
-import { formatKrwAmount } from '../domain/money'
 import type {
   Account,
   AccountKind,
   Category,
-  MonthlyClosing,
-  MonthlyClosingTotals,
-  RecurringScheduleType,
   Transaction,
   TransactionType,
 } from '../domain/types'
 import {
   applyRecurringItemsForMonth,
   archiveAccount,
-  archiveRecurringItem,
   archiveCategory,
+  archiveRecurringItem,
   closeMonth,
   CLOSED_MONTH_MESSAGE,
   createAccount,
@@ -60,51 +48,27 @@ import {
   type BackupRoot,
   type BackupSummary,
   type LedgerBootstrapStatus,
-  type RecurringPreviewItem,
 } from '../repositories'
-
-interface LedgerViewData {
-  categories: Category[]
-  accounts: Account[]
-  allCategories: Category[]
-  allAccounts: Account[]
-  transactions: Transaction[]
-  summary: MonthlyClosingTotals
-  recurringItems: Awaited<ReturnType<typeof listActiveRecurringItems>>
-  recurringPreviews: RecurringPreviewItem[]
-  monthlyClosing: MonthlyClosing | undefined
-  isClosed: boolean
-}
-
-interface TransactionFormState {
-  type: TransactionType
-  date: string
-  amount: string
-  categoryId: string
-  accountId: string
-  memo: string
-}
-
-interface RecurringFormState {
-  name: string
-  amount: string
-  categoryId: string
-  accountId: string
-  scheduleType: RecurringScheduleType
-  dayOfMonth: string
-  startMonth: string
-  endMonth: string
-  memoTemplate: string
-}
-
-type AppState =
-  | { status: 'loading' }
-  | { status: 'ready'; bootstrap: LedgerBootstrapStatus; data: LedgerViewData }
-  | { status: 'error'; message: string }
+import { AppShell } from './AppShell'
+import type {
+  AppState,
+  AppView,
+  LedgerViewData,
+  RecurringFormState,
+  TransactionFormState,
+} from './types'
+import { downloadTextFile } from './utils/download'
+import { ClosingView } from './views/ClosingView'
+import { EntryView } from './views/EntryView'
+import { ExportView } from './views/ExportView'
+import { HomeView } from './views/HomeView'
+import { RecurringView } from './views/RecurringView'
+import { SettingsView } from './views/SettingsView'
 
 function App() {
   const currentMonth = useMemo(() => getCurrentMonthInfo(), [])
   const today = useMemo(() => toDateKey(), [])
+  const [activeView, setActiveView] = useState<AppView>('home')
   const [appState, setAppState] = useState<AppState>({ status: 'loading' })
   const [transactionForm, setTransactionForm] = useState<TransactionFormState>(() =>
     createEmptyTransactionForm(today),
@@ -113,20 +77,20 @@ function App() {
     createEmptyRecurringForm(currentMonth.monthKey),
   )
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [message, setMessage] = useState<string>('')
-  const [recurringMessage, setRecurringMessage] = useState<string>('')
-  const [closingNote, setClosingNote] = useState<string>('')
-  const [closingMessage, setClosingMessage] = useState<string>('')
-  const [backupMessage, setBackupMessage] = useState<string>('')
+  const [message, setMessage] = useState('')
+  const [recurringMessage, setRecurringMessage] = useState('')
+  const [closingNote, setClosingNote] = useState('')
+  const [closingMessage, setClosingMessage] = useState('')
+  const [backupMessage, setBackupMessage] = useState('')
   const [selectedBackup, setSelectedBackup] = useState<BackupRoot | null>(null)
   const [backupSummary, setBackupSummary] = useState<BackupSummary | null>(null)
-  const [restoreConfirmation, setRestoreConfirmation] = useState<string>('')
-  const [csvMessage, setCsvMessage] = useState<string>('')
-  const [categoryName, setCategoryName] = useState<string>('')
+  const [restoreConfirmation, setRestoreConfirmation] = useState('')
+  const [csvMessage, setCsvMessage] = useState('')
+  const [categoryName, setCategoryName] = useState('')
   const [categoryType, setCategoryType] = useState<TransactionType>('expense')
-  const [accountName, setAccountName] = useState<string>('')
+  const [accountName, setAccountName] = useState('')
   const [accountKind, setAccountKind] = useState<AccountKind>('cash')
-  const [settingsMessage, setSettingsMessage] = useState<string>('')
+  const [settingsMessage, setSettingsMessage] = useState('')
 
   const loadData = useCallback(async (): Promise<LedgerViewData> => {
     const [
@@ -209,7 +173,7 @@ function App() {
             message:
               error instanceof Error
                 ? error.message
-                : '알 수 없는 초기화 오류가 발생했습니다.',
+                : '앱 초기화 중 알 수 없는 오류가 발생했습니다.',
           })
         }
       })
@@ -217,35 +181,39 @@ function App() {
     return () => {
       isMounted = false
     }
-  }, [currentMonth.monthKey, loadData])
+  }, [loadData])
 
   if (appState.status === 'loading') {
-    return <PageShell currentMonth={currentMonth.monthKey}>초기화 중입니다.</PageShell>
+    return (
+      <AppShell
+        activeView={activeView}
+        currentMonth={currentMonth.monthKey}
+        isClosed={false}
+        onViewChange={setActiveView}
+      >
+        <section className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-600 shadow-sm">
+          초기화 중입니다.
+        </section>
+      </AppShell>
+    )
   }
 
   if (appState.status === 'error') {
     return (
-      <PageShell currentMonth={currentMonth.monthKey}>
+      <AppShell
+        activeView={activeView}
+        currentMonth={currentMonth.monthKey}
+        isClosed={false}
+        onViewChange={setActiveView}
+      >
         <section className="rounded-lg border border-red-200 bg-red-50 p-5 text-sm text-red-700">
           {appState.message}
         </section>
-      </PageShell>
+      </AppShell>
     )
   }
 
   const { bootstrap, data } = appState
-  const transactionCategoryOptions = data.categories.filter(
-    (category) => category.type === transactionForm.type,
-  )
-  const expenseCategoryOptions = data.categories.filter(
-    (category) => category.type === 'expense',
-  )
-  const categoryById = new Map(
-    data.allCategories.map((category) => [category.id, category]),
-  )
-  const accountById = new Map(
-    data.allAccounts.map((account) => [account.id, account]),
-  )
 
   async function handleTransactionSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -288,6 +256,31 @@ function App() {
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '거래 삭제에 실패했습니다.')
     }
+  }
+
+  function startEdit(transaction: Transaction) {
+    if (data.isClosed) {
+      setMessage(CLOSED_MONTH_MESSAGE)
+      return
+    }
+
+    setEditingId(transaction.id)
+    setActiveView('entry')
+    setMessage('거래를 수정 중입니다.')
+    setTransactionForm({
+      type: transaction.type,
+      date: transaction.date,
+      amount: transaction.amount.toString(),
+      categoryId: transaction.categoryId,
+      accountId: transaction.accountId,
+      memo: transaction.memo ?? '',
+    })
+  }
+
+  function cancelEdit() {
+    setEditingId(null)
+    setMessage('')
+    setTransactionForm(createDefaultTransactionForm(data.categories, data.accounts, today))
   }
 
   async function handleRecurringSubmit(event: FormEvent<HTMLFormElement>) {
@@ -362,30 +355,6 @@ function App() {
     }
   }
 
-  function startEdit(transaction: Transaction) {
-    if (data.isClosed) {
-      setMessage(CLOSED_MONTH_MESSAGE)
-      return
-    }
-
-    setEditingId(transaction.id)
-    setMessage('거래를 수정 중입니다.')
-    setTransactionForm({
-      type: transaction.type,
-      date: transaction.date,
-      amount: transaction.amount.toString(),
-      categoryId: transaction.categoryId,
-      accountId: transaction.accountId,
-      memo: transaction.memo ?? '',
-    })
-  }
-
-  function cancelEdit() {
-    setEditingId(null)
-    setMessage('')
-    setTransactionForm(createDefaultTransactionForm(data.categories, data.accounts, today))
-  }
-
   async function handleCloseMonth() {
     setClosingMessage('')
 
@@ -421,14 +390,12 @@ function App() {
     try {
       const backup = await createFullBackup()
       const json = JSON.stringify(backup, null, 2)
-      const blob = new Blob([json], { type: 'application/json;charset=utf-8' })
-      const url = URL.createObjectURL(blob)
-      const anchor = document.createElement('a')
 
-      anchor.href = url
-      anchor.download = createBackupFileName(new Date(backup.exportedAt))
-      anchor.click()
-      URL.revokeObjectURL(url)
+      downloadTextFile(
+        json,
+        createBackupFileName(new Date(backup.exportedAt)),
+        'application/json;charset=utf-8',
+      )
       setBackupMessage('전체 JSON 백업 파일을 다운로드했습니다.')
     } catch (error) {
       setBackupMessage(
@@ -461,6 +428,8 @@ function App() {
       setBackupMessage(
         error instanceof Error ? error.message : '백업 파일 검증에 실패했습니다.',
       )
+    } finally {
+      event.target.value = ''
     }
   }
 
@@ -495,7 +464,11 @@ function App() {
 
     try {
       const csv = await exportTransactionsCsvByMonth(currentMonth.monthKey)
-      downloadTextFile(csv, createTransactionsCsvFileNameForMonth(currentMonth.monthKey), 'text/csv;charset=utf-8')
+      downloadTextFile(
+        csv,
+        createTransactionsCsvFileNameForMonth(currentMonth.monthKey),
+        'text/csv;charset=utf-8',
+      )
       setCsvMessage('현재 월 거래 CSV를 다운로드했습니다.')
     } catch (error) {
       setCsvMessage(
@@ -509,7 +482,11 @@ function App() {
 
     try {
       const csv = await exportAllTransactionsCsv()
-      downloadTextFile(csv, createAllTransactionsCsvFileName(), 'text/csv;charset=utf-8')
+      downloadTextFile(
+        csv,
+        createAllTransactionsCsvFileName(),
+        'text/csv;charset=utf-8',
+      )
       setCsvMessage('전체 거래 CSV를 다운로드했습니다.')
     } catch (error) {
       setCsvMessage(
@@ -575,17 +552,17 @@ function App() {
     try {
       await createAccount({ name: accountName, kind: accountKind })
       setAccountName('')
-      setSettingsMessage('계좌를 추가했습니다.')
+      setSettingsMessage('계좌/결제수단을 추가했습니다.')
       await refreshData(bootstrap)
     } catch (error) {
       setSettingsMessage(
-        error instanceof Error ? error.message : '계좌 추가에 실패했습니다.',
+        error instanceof Error ? error.message : '계좌/결제수단 추가에 실패했습니다.',
       )
     }
   }
 
   async function handleRenameAccount(account: Account) {
-    const nextName = window.prompt('새 계좌 이름', account.name)
+    const nextName = window.prompt('새 계좌/결제수단 이름', account.name)
 
     if (nextName === null) {
       return
@@ -595,11 +572,11 @@ function App() {
 
     try {
       await updateAccountName(account.id, nextName)
-      setSettingsMessage('계좌 이름을 수정했습니다.')
+      setSettingsMessage('계좌/결제수단 이름을 수정했습니다.')
       await refreshData(bootstrap)
     } catch (error) {
       setSettingsMessage(
-        error instanceof Error ? error.message : '계좌 수정에 실패했습니다.',
+        error instanceof Error ? error.message : '계좌/결제수단 수정에 실패했습니다.',
       )
     }
   }
@@ -609,894 +586,113 @@ function App() {
 
     try {
       await archiveAccount(account.id)
-      setSettingsMessage('계좌를 보관했습니다.')
+      setSettingsMessage('계좌/결제수단을 보관했습니다.')
       await refreshData(bootstrap)
     } catch (error) {
       setSettingsMessage(
-        error instanceof Error ? error.message : '계좌 보관에 실패했습니다.',
+        error instanceof Error ? error.message : '계좌/결제수단 보관에 실패했습니다.',
       )
     }
   }
 
   return (
-    <PageShell currentMonth={currentMonth.monthKey}>
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <SummaryCard label="수입" amount={data.summary.income} tone="income" />
-        <SummaryCard label="지출" amount={data.summary.expense} tone="expense" />
-        <SummaryCard
-          label="고정지출"
-          amount={data.summary.fixedExpense}
-          tone="neutral"
-        />
-        <SummaryCard
-          label="변동지출"
-          amount={data.summary.variableExpense}
-          tone="neutral"
-        />
-        <SummaryCard
-          label="저축/투자"
-          amount={data.summary.savingInvestment}
-          tone="neutral"
-        />
-        <SummaryCard label="남은 돈" amount={data.summary.remaining} tone="income" />
-      </section>
-
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-lg font-semibold text-slate-950">월마감</h2>
-          <p className="text-sm text-slate-500">
-            현재 월 거래 데이터를 snapshot으로 저장합니다. 닫힌 월은 다시 열기 전까지 수정할 수 없습니다.
-          </p>
-        </div>
-
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <InfoTile
-            label="상태"
-            value={data.monthlyClosing?.status === 'closed' ? '마감됨' : data.monthlyClosing?.status === 'reopened' ? '다시 열림' : '미마감'}
-          />
-          <InfoTile
-            label="마감 거래 수"
-            value={(data.monthlyClosing?.transactionCount ?? data.transactions.length).toString()}
-          />
-          <InfoTile
-            label="마감 지출"
-            value={formatKrwAmount(data.monthlyClosing?.expenseTotal ?? data.summary.expense)}
-          />
-          <InfoTile
-            label="마감 남은 돈"
-            value={formatSignedKrwAmount(data.monthlyClosing?.remaining ?? data.summary.remaining)}
-          />
-        </div>
-
-        <label className="mt-4 grid gap-1 text-sm font-medium text-slate-700">
-          월마감 메모
-          <textarea
-            className="min-h-20 rounded-md border border-slate-300 px-3 py-2"
-            placeholder="이번 달 특이사항을 적어 둡니다."
-            value={closingNote}
-            onChange={(event) => setClosingNote(event.target.value)}
-          />
-        </label>
-
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button
-            className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-            disabled={data.isClosed}
-            type="button"
-            onClick={handleCloseMonth}
-          >
-            이번 달 마감하기
-          </button>
-          <button
-            className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-300"
-            disabled={!data.monthlyClosing}
-            type="button"
-            onClick={handleReopenMonth}
-          >
-            다시 열기
-          </button>
-          {data.isClosed ? (
-            <p className="text-sm font-medium text-red-700">
-              닫힌 월입니다. 다시 열기 후 수정하세요.
-            </p>
-          ) : null}
-          {closingMessage ? (
-            <p className="text-sm text-slate-600">{closingMessage}</p>
-          ) : null}
-        </div>
-      </section>
-
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-lg font-semibold text-slate-950">백업/복구</h2>
-          <p className="text-sm text-slate-500">
-            전체 IndexedDB 데이터를 UTF-8 JSON으로 내보내고, 검증된 백업 파일로 복구합니다.
-          </p>
-        </div>
-
-        <div className="mt-5 flex flex-wrap items-center gap-3">
-          <button
-            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-            type="button"
-            onClick={handleExportBackup}
-          >
-            전체 JSON 백업 내보내기
-          </button>
-          <label className="grid gap-1 text-sm font-medium text-slate-700">
-            JSON 백업 파일 선택
-            <input
-              accept="application/json,.json"
-              className="text-sm"
-              type="file"
-              onChange={handleBackupFileChange}
-            />
-          </label>
-        </div>
-
-        {backupSummary ? (
-          <div className="mt-5 rounded-md border border-slate-200 bg-slate-50 p-4">
-            <h3 className="text-sm font-semibold text-slate-950">백업 요약</h3>
-            <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
-              <InfoTile label="exportedAt" value={backupSummary.exportedAt} />
-              <InfoTile
-                label="schemaVersion"
-                value={backupSummary.schemaVersion.toString()}
-              />
-              <InfoTile
-                label="transactions"
-                value={backupSummary.tableCounts.transactions.toString()}
-              />
-              <InfoTile
-                label="categories"
-                value={backupSummary.tableCounts.categories.toString()}
-              />
-              <InfoTile
-                label="accounts"
-                value={backupSummary.tableCounts.accounts.toString()}
-              />
-              <InfoTile
-                label="recurringItems"
-                value={backupSummary.tableCounts.recurringItems.toString()}
-              />
-              <InfoTile
-                label="recurringGeneratedRecords"
-                value={backupSummary.tableCounts.recurringGeneratedRecords.toString()}
-              />
-              <InfoTile
-                label="monthlyClosings"
-                value={backupSummary.tableCounts.monthlyClosings.toString()}
-              />
-            </div>
-          </div>
-        ) : null}
-
-        <div className="mt-5 rounded-md border border-red-200 bg-red-50 p-4">
-          <h3 className="text-sm font-semibold text-red-950">복구 전 확인</h3>
-          <p className="mt-2 text-sm leading-6 text-red-700">
-            복구는 현재 브라우저의 IndexedDB 데이터를 백업 파일 내용으로 교체합니다.
-            필요하면 먼저 “전체 JSON 백업 내보내기”로 현재 데이터를 저장해 주세요.
-          </p>
-          <label className="mt-3 grid max-w-sm gap-1 text-sm font-medium text-red-950">
-            확인 문구 입력: 복구합니다
-            <input
-              className="rounded-md border border-red-200 px-3 py-2"
-              value={restoreConfirmation}
-              onChange={(event) => setRestoreConfirmation(event.target.value)}
-            />
-          </label>
-          <button
-            className="mt-3 rounded-md bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-            disabled={!selectedBackup || restoreConfirmation !== '복구합니다'}
-            type="button"
-            onClick={handleRestoreBackup}
-          >
-            검증된 백업으로 복구
-          </button>
-        </div>
-
-        {backupMessage ? (
-          <p className="mt-4 text-sm text-slate-600">{backupMessage}</p>
-        ) : null}
-      </section>
-
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-lg font-semibold text-slate-950">CSV 내보내기</h2>
-          <p className="text-sm text-slate-500">
-            거래 데이터를 엑셀/구글시트 분석과 장기 보관용 CSV로 다운로드합니다.
-          </p>
-        </div>
-
-        <div className="mt-5 flex flex-wrap items-center gap-3">
-          <button
-            className="rounded-md border border-teal-700 px-4 py-2 text-sm font-semibold text-teal-700"
-            type="button"
-            onClick={handleExportCurrentMonthCsv}
-          >
-            현재 월 거래 CSV 내보내기
-          </button>
-          <button
-            className="rounded-md border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-700"
-            type="button"
-            onClick={handleExportAllTransactionsCsv}
-          >
-            전체 거래 CSV 내보내기
-          </button>
-          {csvMessage ? <p className="text-sm text-slate-600">{csvMessage}</p> : null}
-        </div>
-      </section>
-
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-lg font-semibold text-slate-950">카테고리/계좌 관리</h2>
-          <p className="text-sm text-slate-500">
-            보관된 항목은 새 거래 입력에서 제외되지만, 기존 거래와 CSV에는 이름이 유지됩니다.
-          </p>
-        </div>
-
-        <div className="mt-5 grid gap-6 lg:grid-cols-2">
-          <div>
-            <form className="grid gap-3" onSubmit={handleCreateCategory}>
-              <h3 className="text-sm font-semibold text-slate-950">카테고리 추가</h3>
-              <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
-                <input
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-                  placeholder="카테고리 이름"
-                  value={categoryName}
-                  onChange={(event) => setCategoryName(event.target.value)}
-                />
-                <select
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-                  value={categoryType}
-                  onChange={(event) =>
-                    setCategoryType(event.target.value as TransactionType)
-                  }
-                >
-                  <option value="expense">지출</option>
-                  <option value="income">수입</option>
-                </select>
-                <button
-                  className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
-                  type="submit"
-                >
-                  추가
-                </button>
-              </div>
-            </form>
-
-            <div className="mt-4 space-y-2">
-              {data.allCategories.map((category) => (
-                <div
-                  className="flex items-center justify-between gap-3 rounded-md border border-slate-200 p-3 text-sm"
-                  key={category.id}
-                >
-                  <div>
-                    <div className="font-medium text-slate-900">{category.name}</div>
-                    <div className="mt-1 text-slate-500">
-                      {category.type === 'income' ? '수입' : '지출'}
-                      {category.isArchived ? ' · 보관됨' : ''}
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 gap-2">
-                    <button
-                      className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700"
-                      type="button"
-                      onClick={() => handleRenameCategory(category)}
-                    >
-                      이름 수정
-                    </button>
-                    <button
-                      className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-300"
-                      disabled={category.isArchived}
-                      type="button"
-                      onClick={() => handleArchiveCategory(category)}
-                    >
-                      보관
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <form className="grid gap-3" onSubmit={handleCreateAccount}>
-              <h3 className="text-sm font-semibold text-slate-950">계좌 추가</h3>
-              <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
-                <input
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-                  placeholder="계좌 이름"
-                  value={accountName}
-                  onChange={(event) => setAccountName(event.target.value)}
-                />
-                <select
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-                  value={accountKind}
-                  onChange={(event) =>
-                    setAccountKind(event.target.value as AccountKind)
-                  }
-                >
-                  <option value="cash">현금</option>
-                  <option value="debitCard">체크카드</option>
-                  <option value="creditCard">신용카드</option>
-                  <option value="bankAccount">은행계좌</option>
-                  <option value="other">기타</option>
-                </select>
-                <button
-                  className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
-                  type="submit"
-                >
-                  추가
-                </button>
-              </div>
-            </form>
-
-            <div className="mt-4 space-y-2">
-              {data.allAccounts.map((account) => (
-                <div
-                  className="flex items-center justify-between gap-3 rounded-md border border-slate-200 p-3 text-sm"
-                  key={account.id}
-                >
-                  <div>
-                    <div className="font-medium text-slate-900">{account.name}</div>
-                    <div className="mt-1 text-slate-500">
-                      {formatAccountKind(account.kind)}
-                      {account.isArchived ? ' · 보관됨' : ''}
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 gap-2">
-                    <button
-                      className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700"
-                      type="button"
-                      onClick={() => handleRenameAccount(account)}
-                    >
-                      이름 수정
-                    </button>
-                    <button
-                      className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-300"
-                      disabled={account.isArchived}
-                      type="button"
-                      onClick={() => handleArchiveAccount(account)}
-                    >
-                      보관
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {settingsMessage ? (
-          <p className="mt-4 text-sm text-slate-600">{settingsMessage}</p>
-        ) : null}
-      </section>
-
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-lg font-semibold text-slate-950">
-            {editingId ? '거래 수정' : '거래 입력'}
-          </h2>
-          <p className="text-sm text-slate-500">
-            현재 월 거래만 표시합니다. 삭제는 soft delete로 처리됩니다.
-          </p>
-        </div>
-
-        <form className="mt-5 grid gap-4" onSubmit={handleTransactionSubmit}>
-          <fieldset className="grid gap-4 disabled:opacity-60" disabled={data.isClosed}>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="grid gap-1 text-sm font-medium text-slate-700">
-              유형
-              <select
-                className="rounded-md border border-slate-300 px-3 py-2"
-                value={transactionForm.type}
-                onChange={(event) => {
-                  const nextType = event.target.value as TransactionType
-                  const nextCategory = data.categories.find(
-                    (category) => category.type === nextType,
-                  )
-
-                  setTransactionForm((current) => ({
-                    ...current,
-                    type: nextType,
-                    categoryId: nextCategory?.id ?? '',
-                  }))
-                }}
-              >
-                <option value="expense">지출</option>
-                <option value="income">수입</option>
-              </select>
-            </label>
-
-            <label className="grid gap-1 text-sm font-medium text-slate-700">
-              날짜
-              <input
-                className="rounded-md border border-slate-300 px-3 py-2"
-                type="date"
-                value={transactionForm.date}
-                onChange={(event) =>
-                  setTransactionForm((current) => ({
-                    ...current,
-                    date: event.target.value,
-                  }))
-                }
-              />
-            </label>
-
-            <label className="grid gap-1 text-sm font-medium text-slate-700">
-              금액
-              <input
-                className="rounded-md border border-slate-300 px-3 py-2"
-                inputMode="numeric"
-                placeholder="예: 12000"
-                value={transactionForm.amount}
-                onChange={(event) =>
-                  setTransactionForm((current) => ({
-                    ...current,
-                    amount: event.target.value,
-                  }))
-                }
-              />
-            </label>
-
-            <label className="grid gap-1 text-sm font-medium text-slate-700">
-              카테고리
-              <select
-                className="rounded-md border border-slate-300 px-3 py-2"
-                value={transactionForm.categoryId}
-                onChange={(event) =>
-                  setTransactionForm((current) => ({
-                    ...current,
-                    categoryId: event.target.value,
-                  }))
-                }
-              >
-                {transactionCategoryOptions.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="grid gap-1 text-sm font-medium text-slate-700">
-              계좌
-              <select
-                className="rounded-md border border-slate-300 px-3 py-2"
-                value={transactionForm.accountId}
-                onChange={(event) =>
-                  setTransactionForm((current) => ({
-                    ...current,
-                    accountId: event.target.value,
-                  }))
-                }
-              >
-                {data.accounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="grid gap-1 text-sm font-medium text-slate-700">
-              메모
-              <input
-                className="rounded-md border border-slate-300 px-3 py-2"
-                placeholder="선택 입력"
-                value={transactionForm.memo}
-                onChange={(event) =>
-                  setTransactionForm((current) => ({
-                    ...current,
-                    memo: event.target.value,
-                  }))
-                }
-              />
-            </label>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-              type="submit"
-            >
-              {editingId ? '수정 저장' : '거래 추가'}
-            </button>
-            {editingId ? (
-              <button
-                className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
-                type="button"
-                onClick={cancelEdit}
-              >
-                취소
-              </button>
-            ) : null}
-            {message ? <p className="text-sm text-slate-600">{message}</p> : null}
-          </div>
-          </fieldset>
-        </form>
-      </section>
-
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-lg font-semibold text-slate-950">반복지출</h2>
-          <p className="text-sm text-slate-500">
-            매월 고정지출을 등록하고, 이번 달 거래에 사용자 확인 후 반영합니다.
-          </p>
-        </div>
-
-        <form className="mt-5 grid gap-4" onSubmit={handleRecurringSubmit}>
-          <fieldset className="grid gap-4 disabled:opacity-60" disabled={data.isClosed}>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <label className="grid gap-1 text-sm font-medium text-slate-700">
-              이름
-              <input
-                className="rounded-md border border-slate-300 px-3 py-2"
-                placeholder="예: 월세"
-                value={recurringForm.name}
-                onChange={(event) =>
-                  setRecurringForm((current) => ({
-                    ...current,
-                    name: event.target.value,
-                  }))
-                }
-              />
-            </label>
-
-            <label className="grid gap-1 text-sm font-medium text-slate-700">
-              금액
-              <input
-                className="rounded-md border border-slate-300 px-3 py-2"
-                inputMode="numeric"
-                placeholder="예: 500000"
-                value={recurringForm.amount}
-                onChange={(event) =>
-                  setRecurringForm((current) => ({
-                    ...current,
-                    amount: event.target.value,
-                  }))
-                }
-              />
-            </label>
-
-            <label className="grid gap-1 text-sm font-medium text-slate-700">
-              카테고리
-              <select
-                className="rounded-md border border-slate-300 px-3 py-2"
-                value={recurringForm.categoryId}
-                onChange={(event) =>
-                  setRecurringForm((current) => ({
-                    ...current,
-                    categoryId: event.target.value,
-                  }))
-                }
-              >
-                {expenseCategoryOptions.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="grid gap-1 text-sm font-medium text-slate-700">
-              계좌
-              <select
-                className="rounded-md border border-slate-300 px-3 py-2"
-                value={recurringForm.accountId}
-                onChange={(event) =>
-                  setRecurringForm((current) => ({
-                    ...current,
-                    accountId: event.target.value,
-                  }))
-                }
-              >
-                {data.accounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="grid gap-1 text-sm font-medium text-slate-700">
-              반복 방식
-              <select
-                className="rounded-md border border-slate-300 px-3 py-2"
-                value={recurringForm.scheduleType}
-                onChange={(event) =>
-                  setRecurringForm((current) => ({
-                    ...current,
-                    scheduleType: event.target.value as RecurringScheduleType,
-                  }))
-                }
-              >
-                <option value="dayOfMonth">매월 N일</option>
-                <option value="lastDayOfMonth">매월 말일</option>
-              </select>
-            </label>
-
-            {recurringForm.scheduleType === 'dayOfMonth' ? (
-              <label className="grid gap-1 text-sm font-medium text-slate-700">
-                반복일
-                <input
-                  className="rounded-md border border-slate-300 px-3 py-2"
-                  inputMode="numeric"
-                  max="31"
-                  min="1"
-                  placeholder="1~31"
-                  value={recurringForm.dayOfMonth}
-                  onChange={(event) =>
-                    setRecurringForm((current) => ({
-                      ...current,
-                      dayOfMonth: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-            ) : null}
-
-            <label className="grid gap-1 text-sm font-medium text-slate-700">
-              시작월
-              <input
-                className="rounded-md border border-slate-300 px-3 py-2"
-                type="month"
-                value={recurringForm.startMonth}
-                onChange={(event) =>
-                  setRecurringForm((current) => ({
-                    ...current,
-                    startMonth: event.target.value,
-                  }))
-                }
-              />
-            </label>
-
-            <label className="grid gap-1 text-sm font-medium text-slate-700">
-              종료월
-              <input
-                className="rounded-md border border-slate-300 px-3 py-2"
-                type="month"
-                value={recurringForm.endMonth}
-                onChange={(event) =>
-                  setRecurringForm((current) => ({
-                    ...current,
-                    endMonth: event.target.value,
-                  }))
-                }
-              />
-            </label>
-
-            <label className="grid gap-1 text-sm font-medium text-slate-700">
-              메모
-              <input
-                className="rounded-md border border-slate-300 px-3 py-2"
-                placeholder="선택 입력"
-                value={recurringForm.memoTemplate}
-                onChange={(event) =>
-                  setRecurringForm((current) => ({
-                    ...current,
-                    memoTemplate: event.target.value,
-                  }))
-                }
-              />
-            </label>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-              type="submit"
-            >
-              반복지출 추가
-            </button>
-            <button
-              className="rounded-md border border-teal-700 px-4 py-2 text-sm font-semibold text-teal-700 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-300"
-              type="button"
-              onClick={handleApplyRecurring}
-            >
-              이번 달 고정지출 반영
-            </button>
-            {recurringMessage ? (
-              <p className="text-sm text-slate-600">{recurringMessage}</p>
-            ) : null}
-          </div>
-          </fieldset>
-        </form>
-
-        <div className="mt-6 grid gap-5 lg:grid-cols-2">
-          <div>
-            <h3 className="text-sm font-semibold text-slate-950">
-              이번 달 미반영 항목
-            </h3>
-            {data.recurringPreviews.length === 0 ? (
-              <p className="mt-3 text-sm text-slate-500">반영할 항목이 없습니다.</p>
-            ) : (
-              <ul className="mt-3 space-y-2">
-                {data.recurringPreviews.map((preview) => (
-                  <li
-                    className="rounded-md border border-slate-200 p-3 text-sm"
-                    key={preview.item.id}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="font-medium text-slate-900">
-                        {preview.item.name}
-                      </span>
-                      <span className="text-slate-500">{preview.scheduledDate}</span>
-                    </div>
-                    <div className="mt-1 text-slate-600">
-                      {formatKrwAmount(preview.item.amount)} · {preview.category.name} ·{' '}
-                      {preview.account.name}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          <div>
-            <h3 className="text-sm font-semibold text-slate-950">
-              등록된 반복지출
-            </h3>
-            {data.recurringItems.length === 0 ? (
-              <p className="mt-3 text-sm text-slate-500">
-                아직 등록된 반복지출이 없습니다.
-              </p>
-            ) : (
-              <ul className="mt-3 space-y-2">
-                {data.recurringItems.map((item) => (
-                  <li
-                    className="flex items-center justify-between gap-3 rounded-md border border-slate-200 p-3 text-sm"
-                    key={item.id}
-                  >
-                    <div>
-                      <div className="font-medium text-slate-900">{item.name}</div>
-                      <div className="mt-1 text-slate-600">
-                        {formatKrwAmount(item.amount)} · {item.startMonth}
-                        {item.endMonth ? ` ~ ${item.endMonth}` : ''}
-                      </div>
-                    </div>
-                    <button
-                      className="shrink-0 rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700"
-                      type="button"
-                      onClick={() => handleArchiveRecurring(item.id)}
-                    >
-                      보관
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-950">현재 월 거래 목록</h2>
-        {data.transactions.length === 0 ? (
-          <p className="mt-4 text-sm text-slate-500">아직 입력된 거래가 없습니다.</p>
-        ) : (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[720px] border-collapse text-left text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 text-slate-500">
-                  <th className="py-2 pr-3 font-medium">날짜</th>
-                  <th className="py-2 pr-3 font-medium">유형</th>
-                  <th className="py-2 pr-3 text-right font-medium">금액</th>
-                  <th className="py-2 pr-3 font-medium">카테고리</th>
-                  <th className="py-2 pr-3 font-medium">계좌</th>
-                  <th className="py-2 pr-3 font-medium">메모</th>
-                  <th className="py-2 text-right font-medium">작업</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.transactions.map((transaction) => (
-                  <tr key={transaction.id} className="border-b border-slate-100">
-                    <td className="py-3 pr-3 text-slate-700">{transaction.date}</td>
-                    <td className="py-3 pr-3 text-slate-700">
-                      {transaction.type === 'income' ? '수입' : '지출'}
-                      {transaction.source === 'recurring' ? ' · 반복' : ''}
-                    </td>
-                    <td className="py-3 pr-3 text-right font-medium text-slate-950">
-                      {formatKrwAmount(transaction.amount)}
-                    </td>
-                    <td className="py-3 pr-3 text-slate-700">
-                      {categoryById.get(transaction.categoryId)?.name ?? '알 수 없음'}
-                    </td>
-                    <td className="py-3 pr-3 text-slate-700">
-                      {accountById.get(transaction.accountId)?.name ?? '알 수 없음'}
-                    </td>
-                    <td className="py-3 pr-3 text-slate-700">
-                      {transaction.memo ?? '-'}
-                    </td>
-                    <td className="py-3 text-right">
-                      <div className="flex justify-end gap-2">
-                        <button
-                          className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-300"
-                          disabled={data.isClosed}
-                          type="button"
-                          onClick={() => startEdit(transaction)}
-                        >
-                          수정
-                        </button>
-                        <button
-                          className="rounded-md border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:text-slate-300"
-                          disabled={data.isClosed}
-                          type="button"
-                          onClick={() => handleDeleteTransaction(transaction.id)}
-                        >
-                          삭제
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-    </PageShell>
+    <AppShell
+      activeView={activeView}
+      currentMonth={currentMonth.monthKey}
+      isClosed={data.isClosed}
+      onViewChange={setActiveView}
+    >
+      {renderActiveView()}
+    </AppShell>
   )
-}
 
-interface PageShellProps {
-  children: ReactNode
-  currentMonth: string
-}
-
-function PageShell({ children, currentMonth }: PageShellProps) {
-  return (
-    <main className="mx-auto flex min-h-svh w-full max-w-5xl flex-col gap-6 px-5 py-8 sm:px-8">
-      <header className="border-b border-slate-200 pb-5">
-        <p className="text-sm font-medium text-teal-700">로컬 우선 PWA</p>
-        <h1 className="mt-2 text-3xl font-semibold text-slate-950 sm:text-4xl">
-          Lifetime Ledger
-        </h1>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
-          현재 월({currentMonth}) 기준으로 수입, 지출, 반복지출을 관리합니다.
-        </p>
-      </header>
-      {children}
-    </main>
-  )
-}
-
-interface SummaryCardProps {
-  label: string
-  amount: number
-  tone: 'income' | 'expense' | 'neutral'
-}
-
-function SummaryCard({ label, amount, tone }: SummaryCardProps) {
-  const toneClass =
-    tone === 'income'
-      ? 'text-teal-700'
-      : tone === 'expense'
-        ? 'text-red-700'
-        : 'text-slate-950'
-
-  return (
-    <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <h2 className="text-sm font-medium text-slate-500">{label}</h2>
-      <p className={`mt-2 text-xl font-semibold ${toneClass}`}>
-        {formatSignedKrwAmount(amount)}
-      </p>
-    </section>
-  )
-}
-
-interface InfoTileProps {
-  label: string
-  value: string
-}
-
-function InfoTile({ label, value }: InfoTileProps) {
-  return (
-    <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-      <div className="text-xs font-medium text-slate-500">{label}</div>
-      <div className="mt-1 text-sm font-semibold text-slate-950">{value}</div>
-    </div>
-  )
+  function renderActiveView() {
+    switch (activeView) {
+      case 'home':
+        return (
+          <HomeView
+            currentMonth={currentMonth.monthKey}
+            data={data}
+            onNavigate={setActiveView}
+          />
+        )
+      case 'entry':
+        return (
+          <EntryView
+            data={data}
+            editingId={editingId}
+            form={transactionForm}
+            message={message}
+            onCancelEdit={cancelEdit}
+            onDeleteTransaction={handleDeleteTransaction}
+            onStartEdit={startEdit}
+            onSubmit={handleTransactionSubmit}
+            setForm={setTransactionForm}
+          />
+        )
+      case 'recurring':
+        return (
+          <RecurringView
+            data={data}
+            form={recurringForm}
+            message={recurringMessage}
+            onApplyRecurring={handleApplyRecurring}
+            onArchiveRecurring={handleArchiveRecurring}
+            onSubmit={handleRecurringSubmit}
+            setForm={setRecurringForm}
+          />
+        )
+      case 'closing':
+        return (
+          <ClosingView
+            closingMessage={closingMessage}
+            closingNote={closingNote}
+            currentMonth={currentMonth.monthKey}
+            data={data}
+            onCloseMonth={handleCloseMonth}
+            onReopenMonth={handleReopenMonth}
+            setClosingNote={setClosingNote}
+          />
+        )
+      case 'export':
+        return (
+          <ExportView
+            backupMessage={backupMessage}
+            backupSummary={backupSummary}
+            csvMessage={csvMessage}
+            onBackupFileChange={handleBackupFileChange}
+            onExportAllTransactionsCsv={handleExportAllTransactionsCsv}
+            onExportBackup={handleExportBackup}
+            onExportCurrentMonthCsv={handleExportCurrentMonthCsv}
+            onRestoreBackup={handleRestoreBackup}
+            restoreConfirmation={restoreConfirmation}
+            selectedBackup={selectedBackup}
+            setRestoreConfirmation={setRestoreConfirmation}
+          />
+        )
+      case 'settings':
+        return (
+          <SettingsView
+            accountKind={accountKind}
+            accountName={accountName}
+            categoryName={categoryName}
+            categoryType={categoryType}
+            data={data}
+            onArchiveAccount={handleArchiveAccount}
+            onArchiveCategory={handleArchiveCategory}
+            onCreateAccount={handleCreateAccount}
+            onCreateCategory={handleCreateCategory}
+            onRenameAccount={handleRenameAccount}
+            onRenameCategory={handleRenameCategory}
+            setAccountKind={setAccountKind}
+            setAccountName={setAccountName}
+            setCategoryName={setCategoryName}
+            setCategoryType={setCategoryType}
+            settingsMessage={settingsMessage}
+          />
+        )
+    }
+  }
 }
 
 function createEmptyTransactionForm(date: string): TransactionFormState {
@@ -1583,33 +779,6 @@ function ensureRecurringFormDefaults(
     categoryId: categoryStillValid ? form.categoryId : (expenseCategories[0]?.id ?? ''),
     accountId: accountStillValid ? form.accountId : (accounts[0]?.id ?? ''),
   }
-}
-
-function formatSignedKrwAmount(amount: number): string {
-  return amount < 0 ? `-${formatKrwAmount(Math.abs(amount))}` : formatKrwAmount(amount)
-}
-
-function formatAccountKind(kind: AccountKind): string {
-  const labels: Record<AccountKind, string> = {
-    cash: '현금',
-    debitCard: '체크카드',
-    creditCard: '신용카드',
-    bankAccount: '은행계좌',
-    other: '기타',
-  }
-
-  return labels[kind]
-}
-
-function downloadTextFile(content: string, fileName: string, type: string) {
-  const blob = new Blob([content], { type })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-
-  anchor.href = url
-  anchor.download = fileName
-  anchor.click()
-  URL.revokeObjectURL(url)
 }
 
 export default App
