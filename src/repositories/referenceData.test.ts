@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { ensureSeedData } from '../db/seed'
 import { LedgerDatabase } from '../db/schema'
+import { createId } from '../domain/id'
 import { exportAllTransactionsCsv } from './csvExport'
 import {
   archiveAccount,
@@ -20,7 +21,7 @@ describe('reference data repository', () => {
   let database: LedgerDatabase
 
   beforeEach(async () => {
-    const databaseName = `lifetime-ledger-reference-test-${crypto.randomUUID()}`
+    const databaseName = `lifetime-ledger-reference-test-${createId()}`
     database = new LedgerDatabase(databaseName)
     await database.delete()
     database.close()

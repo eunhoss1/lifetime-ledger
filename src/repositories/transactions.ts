@@ -5,6 +5,7 @@ import {
   type TransactionInput,
   type TransactionPatch,
 } from '../domain/transactions'
+import { createId } from '../domain/id'
 import type {
   Account,
   Category,
@@ -56,7 +57,7 @@ export async function createTransaction(
 
       const now = new Date().toISOString()
       const transaction: Transaction = {
-        id: crypto.randomUUID(),
+        id: createId(),
         ...normalized,
         currency: 'KRW',
         source: 'manual',

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { ensureSeedData } from '../db/seed'
 import { LedgerDatabase } from '../db/schema'
+import { createId } from '../domain/id'
 import { applyRecurringItemsForMonth, createRecurringItem } from './recurring'
 import {
   closeMonth,
@@ -18,7 +19,7 @@ describe('monthly closing repository', () => {
   let database: LedgerDatabase
 
   beforeEach(async () => {
-    const databaseName = `lifetime-ledger-closing-test-${crypto.randomUUID()}`
+    const databaseName = `lifetime-ledger-closing-test-${createId()}`
     database = new LedgerDatabase(databaseName)
     await database.delete()
     database.close()

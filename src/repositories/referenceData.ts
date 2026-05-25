@@ -5,6 +5,7 @@ import type {
   EntityId,
   TransactionType,
 } from '../domain/types'
+import { createId } from '../domain/id'
 import { db, type LedgerDatabase } from '../db/schema'
 
 export interface CreateCategoryInput {
@@ -41,7 +42,7 @@ export async function createCategory(
   const name = normalizeName(input.name, '카테고리 이름')
   const now = new Date().toISOString()
   const category: Category = {
-    id: crypto.randomUUID(),
+    id: createId(),
     name,
     type: input.type,
     expenseRole: input.type === 'expense' ? 'variable' : undefined,
@@ -132,7 +133,7 @@ export async function createAccount(
 ): Promise<Account> {
   const now = new Date().toISOString()
   const account: Account = {
-    id: crypto.randomUUID(),
+    id: createId(),
     name: normalizeName(input.name, '계좌 이름'),
     kind: input.kind,
     color: '#64748b',

@@ -183,13 +183,25 @@ function App() {
     }
   }, [loadData])
 
+  function handleViewChange(view: AppView) {
+    setActiveView(view)
+    clearTransientMessages([
+      setMessage,
+      setRecurringMessage,
+      setClosingMessage,
+      setBackupMessage,
+      setCsvMessage,
+      setSettingsMessage,
+    ])
+  }
+
   if (appState.status === 'loading') {
     return (
       <AppShell
         activeView={activeView}
         currentMonth={currentMonth.monthKey}
         isClosed={false}
-        onViewChange={setActiveView}
+        onViewChange={handleViewChange}
       >
         <section className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-600 shadow-sm">
           초기화 중입니다.
@@ -204,7 +216,7 @@ function App() {
         activeView={activeView}
         currentMonth={currentMonth.monthKey}
         isClosed={false}
-        onViewChange={setActiveView}
+        onViewChange={handleViewChange}
       >
         <section className="rounded-lg border border-red-200 bg-red-50 p-5 text-sm text-red-700">
           {appState.message}
@@ -601,7 +613,7 @@ function App() {
       activeView={activeView}
       currentMonth={currentMonth.monthKey}
       isClosed={data.isClosed}
-      onViewChange={setActiveView}
+      onViewChange={handleViewChange}
     >
       {renderActiveView()}
     </AppShell>
@@ -614,7 +626,7 @@ function App() {
           <HomeView
             currentMonth={currentMonth.monthKey}
             data={data}
-            onNavigate={setActiveView}
+            onNavigate={handleViewChange}
           />
         )
       case 'entry':
@@ -693,6 +705,14 @@ function App() {
           />
         )
     }
+  }
+}
+
+function clearTransientMessages(
+  setters: ReadonlyArray<(value: string) => void>,
+) {
+  for (const setValue of setters) {
+    setValue('')
   }
 }
 

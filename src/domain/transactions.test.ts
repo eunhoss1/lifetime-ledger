@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { createId } from './id'
 import {
   calculateMonthlyTransactionSummary,
   normalizeTransactionInput,
@@ -99,7 +100,7 @@ function createTransactionFixture(
   expenseRole?: Transaction['expenseRole'],
 ): Transaction {
   return {
-    id: crypto.randomUUID(),
+    id: createId(),
     type,
     date: '2026-05-25',
     monthKey: '2026-05',

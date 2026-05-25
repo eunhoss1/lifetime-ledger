@@ -9,6 +9,7 @@ import {
   type BackupSummary,
   type BackupTables,
 } from '../domain/backup'
+import { createId } from '../domain/id'
 import { db, type LedgerDatabase } from '../db/schema'
 
 export async function createFullBackup(
@@ -31,7 +32,7 @@ export async function createFullBackup(
     appName: BACKUP_APP_NAME,
     backupVersion: BACKUP_VERSION,
     exportedAt,
-    exportId: crypto.randomUUID(),
+    exportId: createId(),
     tables,
     tableCounts: createTableCounts(tables),
   }

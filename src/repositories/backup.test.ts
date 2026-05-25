@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { ensureSeedData } from '../db/seed'
 import { LedgerDatabase } from '../db/schema'
+import { createId } from '../domain/id'
 import { closeMonth } from './monthlyClosings'
 import { applyRecurringItemsForMonth, createRecurringItem } from './recurring'
 import { createTransaction, softDeleteTransaction } from './transactions'
@@ -95,7 +96,7 @@ describe('backup repository', () => {
 })
 
 async function createTestDatabase(): Promise<LedgerDatabase> {
-  const databaseName = `lifetime-ledger-backup-test-${crypto.randomUUID()}`
+  const databaseName = `lifetime-ledger-backup-test-${createId()}`
   const database = new LedgerDatabase(databaseName)
   await database.delete()
   database.close()

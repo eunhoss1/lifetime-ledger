@@ -1,4 +1,5 @@
 import { calculateMonthlyClosingSnapshot } from '../domain/closing'
+import { createId } from '../domain/id'
 import type { MonthlyClosing, MonthKey } from '../domain/types'
 import { db, type LedgerDatabase } from '../db/schema'
 
@@ -59,7 +60,7 @@ export async function closeMonth(
         status: 'closed',
       })
       const closing: MonthlyClosing = {
-        id: existing?.id ?? crypto.randomUUID(),
+        id: existing?.id ?? createId(),
         ...snapshot,
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,

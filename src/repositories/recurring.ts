@@ -7,6 +7,7 @@ import {
   type RecurringItemInput,
   type RecurringItemPatch,
 } from '../domain/recurring'
+import { createId } from '../domain/id'
 import type {
   Account,
   Category,
@@ -118,7 +119,7 @@ export async function createRecurringItem(
       const normalized = normalizeRecurringItemInput(input, category)
       const now = new Date().toISOString()
       const item: RecurringItem = {
-        id: crypto.randomUUID(),
+        id: createId(),
         ...normalized,
         overflowPolicy: 'clampToLastDay',
         autoCreate: false,
@@ -272,8 +273,8 @@ export async function applyRecurringItemsForMonth(
           getUsableAccount(item.accountId, database),
         ])
         const now = new Date().toISOString()
-        const transactionId = crypto.randomUUID()
-        const generatedRecordId = crypto.randomUUID()
+        const transactionId = createId()
+        const generatedRecordId = createId()
         const draft = createRecurringTransactionDraft(item, monthKey, category)
         const transaction: Transaction = {
           id: transactionId,
