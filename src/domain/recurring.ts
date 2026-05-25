@@ -16,6 +16,7 @@ export interface RecurringItemInput {
   amount: number | string
   categoryId: EntityId
   accountId: EntityId
+  expenseRole?: ExpenseRole
   memoTemplate?: string
   scheduleType: RecurringScheduleType
   dayOfMonth?: number | string
@@ -32,6 +33,7 @@ export interface NormalizedRecurringItemInput {
   amount: number
   categoryId: EntityId
   accountId: EntityId
+  expenseRole: ExpenseRole
   memoTemplate?: string
   scheduleType: RecurringScheduleType
   dayOfMonth?: number
@@ -96,6 +98,7 @@ export function normalizeRecurringItemInput(
   }
 
   const dayOfMonth = normalizeDayOfMonth(input.scheduleType, input.dayOfMonth)
+  const expenseRole = normalizeExpenseRole(input.expenseRole)
   const memoTemplate = normalizeMemo(input.memoTemplate)
 
   return {
@@ -104,6 +107,7 @@ export function normalizeRecurringItemInput(
     amount,
     categoryId: input.categoryId,
     accountId: input.accountId,
+    expenseRole,
     memoTemplate,
     scheduleType: input.scheduleType,
     dayOfMonth,
@@ -125,6 +129,7 @@ export function normalizeRecurringItemPatch(
       amount: patch.amount ?? existing.amount,
       categoryId: patch.categoryId ?? existing.categoryId,
       accountId: patch.accountId ?? existing.accountId,
+      expenseRole: patch.expenseRole ?? existing.expenseRole ?? 'fixed',
       memoTemplate: patch.memoTemplate ?? existing.memoTemplate,
       scheduleType: patch.scheduleType ?? existing.scheduleType,
       dayOfMonth: patch.dayOfMonth ?? existing.dayOfMonth,
@@ -185,8 +190,20 @@ export function createRecurringTransactionDraft(
     categoryId: item.categoryId,
     accountId: item.accountId,
     memo: item.memoTemplate,
-    expenseRole: category?.expenseRole ?? 'fixed',
+    expenseRole: item.expenseRole ?? category?.expenseRole ?? 'fixed',
   }
+}
+
+function normalizeExpenseRole(role: ExpenseRole | undefined): ExpenseRole {
+  if (!role) {
+    return 'fixed'
+  }
+
+  if (role !== 'fixed' && role !== 'variable' && role !== 'savingInvestment') {
+    throw new Error('지출 성격은 고정지출, 변동지출, 저축/투자 중 하나여야 합니다.')
+  }
+
+  return role
 }
 
 function normalizeDayOfMonth(

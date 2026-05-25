@@ -97,6 +97,24 @@ export function RecurringForm({
             </label>
 
             <label className="grid gap-1 text-sm font-medium text-slate-700">
+              지출 성격
+              <select
+                className="rounded-md border border-slate-300 px-3 py-2"
+                value={form.expenseRole}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    expenseRole: event.target.value as RecurringFormState['expenseRole'],
+                  }))
+                }
+              >
+                <option value="fixed">고정지출</option>
+                <option value="variable">변동지출</option>
+                <option value="savingInvestment">저축/투자</option>
+              </select>
+            </label>
+
+            <label className="grid gap-1 text-sm font-medium text-slate-700">
               반복 방식
               <select
                 className="rounded-md border border-slate-300 px-3 py-2"

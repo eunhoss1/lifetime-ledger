@@ -29,11 +29,14 @@ export {
   archiveRecurringItem,
   createRecurringItem,
   listActiveRecurringItems,
+  listRecurringItemsWithMonthStatus,
   previewRecurringItemsForMonth,
   updateRecurringItem,
 } from './recurring'
 export type {
   CreateRecurringItemInput,
+  RecurringMonthStatus,
+  RecurringMonthStatusItem,
   RecurringPreviewItem,
   UpdateRecurringItemPatch,
 } from './recurring'

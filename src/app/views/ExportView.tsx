@@ -127,6 +127,7 @@ export function ExportView({
           <h2 className="text-lg font-semibold text-slate-950">CSV 내보내기</h2>
           <p className="text-sm text-slate-500">
             CSV는 엑셀/구글시트 분석과 장기 보관용입니다. 복구는 JSON을 사용합니다.
+            Excel에서 날짜가 ######처럼 보이면 열 너비를 넓히면 보입니다.
           </p>
         </div>
 

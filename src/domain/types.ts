@@ -69,6 +69,7 @@ export interface RecurringItem extends EntityBase {
   amount: number
   categoryId: EntityId
   accountId: EntityId
+  expenseRole?: ExpenseRole
   memoTemplate?: string
   scheduleType: RecurringScheduleType
   dayOfMonth?: number

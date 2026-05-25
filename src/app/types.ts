@@ -3,7 +3,7 @@ import type {
   Category,
   MonthlyClosing,
   MonthlyClosingTotals,
-  RecurringItem,
+  ExpenseRole,
   RecurringScheduleType,
   Transaction,
   TransactionType,
@@ -12,6 +12,7 @@ import type {
   BackupRoot,
   BackupSummary,
   LedgerBootstrapStatus,
+  RecurringMonthStatusItem,
   RecurringPreviewItem,
 } from '../repositories'
 
@@ -30,7 +31,7 @@ export interface LedgerViewData {
   allAccounts: Account[]
   transactions: Transaction[]
   summary: MonthlyClosingTotals
-  recurringItems: RecurringItem[]
+  recurringItems: RecurringMonthStatusItem[]
   recurringPreviews: RecurringPreviewItem[]
   monthlyClosing: MonthlyClosing | undefined
   isClosed: boolean
@@ -50,6 +51,7 @@ export interface RecurringFormState {
   amount: string
   categoryId: string
   accountId: string
+  expenseRole: ExpenseRole
   scheduleType: RecurringScheduleType
   dayOfMonth: string
   startMonth: string

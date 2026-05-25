@@ -34,7 +34,7 @@ describe('recurring domain', () => {
     expect(isRecurringItemCandidateForMonth(item, '2026-06')).toBe(false)
   })
 
-  it('validates MVP recurring expense input', () => {
+  it('defaults recurring expenseRole to fixed', () => {
     expect(
       normalizeRecurringItemInput({
         name: '월세',
@@ -52,6 +52,26 @@ describe('recurring domain', () => {
       amount: 500000,
       dayOfMonth: 31,
       startMonth: '2026-01',
+      expenseRole: 'fixed',
+    })
+  })
+
+  it('keeps selected recurring expenseRole', () => {
+    expect(
+      normalizeRecurringItemInput({
+        name: '운동 구독',
+        type: 'expense',
+        amount: '30000',
+        categoryId: 'category-expense-culture',
+        accountId: 'account-credit-card',
+        expenseRole: 'variable',
+        scheduleType: 'dayOfMonth',
+        dayOfMonth: '1',
+        startMonth: '2026-01',
+        active: true,
+      }),
+    ).toMatchObject({
+      expenseRole: 'variable',
     })
   })
 })

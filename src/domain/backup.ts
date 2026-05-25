@@ -114,6 +114,7 @@ const recurringItemSchema = entityBaseSchema
     amount: z.number().int().nonnegative(),
     categoryId: z.string().min(1),
     accountId: z.string().min(1),
+    expenseRole: z.enum(['fixed', 'variable', 'savingInvestment']).optional(),
     memoTemplate: z.string().optional(),
     scheduleType: z.enum(['dayOfMonth', 'lastDayOfMonth']),
     dayOfMonth: z.number().int().min(1).max(31).optional(),

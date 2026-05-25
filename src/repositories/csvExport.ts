@@ -3,6 +3,8 @@ import type { MonthKey } from '../domain/types'
 import { db, type LedgerDatabase } from '../db/schema'
 
 export interface CsvExportOptions {
+  excelCompatible?: boolean
+  includeBom?: boolean
   includeDeleted?: boolean
 }
 
@@ -17,7 +19,11 @@ export async function exportTransactionsCsvByMonth(
     database.accounts.toArray(),
   ])
 
-  return createTransactionsCsv(transactions, categories, accounts, options)
+  return createTransactionsCsv(transactions, categories, accounts, {
+    excelCompatible: true,
+    includeBom: true,
+    ...options,
+  })
 }
 
 export async function exportAllTransactionsCsv(
@@ -30,5 +36,9 @@ export async function exportAllTransactionsCsv(
     database.accounts.toArray(),
   ])
 
-  return createTransactionsCsv(transactions, categories, accounts, options)
+  return createTransactionsCsv(transactions, categories, accounts, {
+    excelCompatible: true,
+    includeBom: true,
+    ...options,
+  })
 }

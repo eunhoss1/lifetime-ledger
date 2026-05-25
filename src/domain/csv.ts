@@ -1,8 +1,11 @@
 import type { Account, Category, Transaction } from './types'
 
 export const UNKNOWN_LABEL = '(알 수 없음)'
+export const UTF8_BOM = '\uFEFF'
 
 export interface TransactionCsvExportOptions {
+  excelCompatible?: boolean
+  includeBom?: boolean
   includeDeleted?: boolean
 }
 
@@ -62,14 +65,16 @@ export function createTransactionsCsv(
         transaction,
         categoryById.get(transaction.categoryId) ?? UNKNOWN_LABEL,
         accountById.get(transaction.accountId) ?? UNKNOWN_LABEL,
+        options,
       ),
     )
 
-  return stringifyCsvRows(rows)
+  return stringifyCsvRows(rows, options)
 }
 
 export function stringifyCsvRows(
   rows: ReadonlyArray<TransactionCsvRow>,
+  options: Pick<TransactionCsvExportOptions, 'includeBom'> = {},
 ): string {
   const lines = [
     TRANSACTION_CSV_COLUMNS.join(','),
@@ -77,8 +82,9 @@ export function stringifyCsvRows(
       TRANSACTION_CSV_COLUMNS.map((column) => escapeCsvValue(row[column])).join(','),
     ),
   ]
+  const csv = `${lines.join('\r\n')}\r\n`
 
-  return `${lines.join('\r\n')}\r\n`
+  return options.includeBom ? `${UTF8_BOM}${csv}` : csv
 }
 
 export function escapeCsvValue(value: string | number): string {
@@ -114,10 +120,13 @@ function createTransactionCsvRow(
   transaction: Transaction,
   categoryName: string,
   accountName: string,
+  options: Pick<TransactionCsvExportOptions, 'excelCompatible'>,
 ): TransactionCsvRow {
   return {
     date: transaction.date,
-    monthKey: transaction.monthKey,
+    monthKey: options.excelCompatible
+      ? createExcelTextValue(transaction.monthKey)
+      : transaction.monthKey,
     type: transaction.type,
     amount: transaction.amount,
     currency: transaction.currency,
@@ -133,4 +142,8 @@ function createTransactionCsvRow(
     createdAt: transaction.createdAt,
     updatedAt: transaction.updatedAt,
   }
+}
+
+function createExcelTextValue(value: string): string {
+  return `="${value}"`
 }

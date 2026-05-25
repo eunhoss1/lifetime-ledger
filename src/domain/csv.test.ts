@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  UTF8_BOM,
   createAllTransactionsCsvFileName,
   createTransactionsCsv,
   createTransactionsCsvFileNameForMonth,
@@ -34,6 +35,20 @@ describe('csv domain', () => {
     )
 
     expect(csv).toContain('"점심, ""김밥""\n커피"')
+  })
+
+  it('can create Excel-compatible CSV with BOM and text monthKey', () => {
+    const csv = createTransactionsCsv([transactionFixture()], categories, accounts, {
+      excelCompatible: true,
+      includeBom: true,
+    })
+
+    expect(csv.startsWith(UTF8_BOM)).toBe(true)
+    expect(csv).toContain('2026-05-25,"=""2026-05"""')
+    expect(csv).toContain('점심')
+    expect(csv).toContain('식비')
+    expect(csv).toContain('현금')
+    expect(csv).toContain('\r\n')
   })
 
   it('excludes soft deleted transactions by default and can include them by option', () => {

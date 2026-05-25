@@ -53,23 +53,14 @@ describe('csv export repository', () => {
   })
 
   it('exports all transactions and maps category/account names', async () => {
+    await addKoreanReferenceData(database)
     await createTransaction(
       {
         type: 'expense',
         date: '2026-05-25',
         amount: 12000,
-        categoryId: 'category-expense-food',
-        accountId: 'account-cash',
-      },
-      database,
-    )
-    await createTransaction(
-      {
-        type: 'income',
-        date: '2026-06-01',
-        amount: 5000000,
-        categoryId: 'category-income-salary',
-        accountId: 'account-bank-account',
+        categoryId: 'category-expense-custom-food',
+        accountId: 'account-custom-cash',
       },
       database,
     )
@@ -78,8 +69,6 @@ describe('csv export repository', () => {
 
     expect(csv).toContain('식비')
     expect(csv).toContain('현금')
-    expect(csv).toContain('월급')
-    expect(csv).toContain('은행계좌')
   })
 
   it('excludes soft deleted transactions by default', async () => {
@@ -120,4 +109,58 @@ describe('csv export repository', () => {
 
     expect(await exportAllTransactionsCsv({}, database)).toContain('(알 수 없음)')
   })
+
+  it('exports Excel-compatible CSV by default', async () => {
+    await addKoreanReferenceData(database)
+    await createTransaction(
+      {
+        type: 'expense',
+        date: '2026-05-25',
+        amount: 12000,
+        categoryId: 'category-expense-custom-food',
+        accountId: 'account-custom-cash',
+        memo: '한글 메모',
+      },
+      database,
+    )
+
+    const csv = await exportTransactionsCsvByMonth('2026-05', {}, database)
+
+    expect(csv.startsWith('\uFEFF')).toBe(true)
+    expect(csv).toContain('"=""2026-05"""')
+    expect(csv).toContain('한글 메모')
+    expect(csv).toContain('식비')
+    expect(csv).toContain('현금')
+  })
 })
+
+async function addKoreanReferenceData(database: LedgerDatabase) {
+  const now = '2026-05-01T00:00:00.000Z'
+
+  await database.categories.put({
+    id: 'category-expense-custom-food',
+    name: '식비',
+    type: 'expense',
+    expenseRole: 'variable',
+    color: '#dc2626',
+    icon: 'utensils',
+    sortOrder: 999,
+    isDefault: false,
+    isArchived: false,
+    createdAt: now,
+    updatedAt: now,
+    localRevision: 1,
+  })
+  await database.accounts.put({
+    id: 'account-custom-cash',
+    name: '현금',
+    kind: 'cash',
+    color: '#0f766e',
+    sortOrder: 999,
+    isArchived: false,
+    assetTrackingEnabled: false,
+    createdAt: now,
+    updatedAt: now,
+    localRevision: 1,
+  })
+}

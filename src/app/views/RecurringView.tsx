@@ -2,6 +2,7 @@ import type { Dispatch, FormEvent, SetStateAction } from 'react'
 import { formatKrwAmount } from '../../domain/money'
 import { RecurringForm } from '../forms/RecurringForm'
 import type { LedgerViewData, RecurringFormState } from '../types'
+import { formatExpenseRole } from '../utils/format'
 
 interface RecurringViewProps {
   data: LedgerViewData
@@ -52,8 +53,9 @@ export function RecurringView({
                     <span className="text-slate-500">{preview.scheduledDate}</span>
                   </div>
                   <div className="mt-1 text-slate-600">
-                    {formatKrwAmount(preview.item.amount)} · {preview.category.name} ·{' '}
-                    {preview.account.name}
+                    {formatKrwAmount(preview.item.amount)} ·{' '}
+                    {formatExpenseRole(preview.item.expenseRole ?? 'fixed')} ·{' '}
+                    {preview.category.name} · {preview.account.name}
                   </div>
                 </li>
               ))}
@@ -69,25 +71,47 @@ export function RecurringView({
             </p>
           ) : (
             <ul className="mt-3 space-y-2">
-              {data.recurringItems.map((item) => (
+              {data.recurringItems.map((statusItem) => (
                 <li
                   className="flex items-center justify-between gap-3 rounded-md border border-slate-200 p-3 text-sm"
-                  key={item.id}
+                  key={statusItem.item.id}
                 >
                   <div>
-                    <div className="font-medium text-slate-900">{item.name}</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-slate-900">
+                        {statusItem.item.name}
+                      </span>
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                        {formatRecurringStatus(statusItem.status)}
+                      </span>
+                    </div>
                     <div className="mt-1 text-slate-600">
-                      {formatKrwAmount(item.amount)} · {item.startMonth}
-                      {item.endMonth ? ` ~ ${item.endMonth}` : ''}
+                      {formatKrwAmount(statusItem.item.amount)} ·{' '}
+                      {formatExpenseRole(statusItem.item.expenseRole ?? 'fixed')} ·{' '}
+                      {statusItem.categoryName} · {statusItem.accountName}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      {statusItem.item.startMonth}
+                      {statusItem.item.endMonth ? ` ~ ${statusItem.item.endMonth}` : ''}
+                      {statusItem.scheduledDate ? ` · 예정일 ${statusItem.scheduledDate}` : ''}
+                      {statusItem.generatedTransactionId
+                        ? ` · 생성 거래 ${statusItem.generatedTransactionId}`
+                        : ''}
                     </div>
                   </div>
-                  <button
-                    className="shrink-0 rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700"
-                    type="button"
-                    onClick={() => onArchiveRecurring(item.id)}
-                  >
-                    보관
-                  </button>
+                  {statusItem.status === 'archived' ? (
+                    <span className="shrink-0 text-xs font-semibold text-slate-400">
+                      보관됨
+                    </span>
+                  ) : (
+                    <button
+                      className="shrink-0 rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700"
+                      type="button"
+                      onClick={() => onArchiveRecurring(statusItem.item.id)}
+                    >
+                      보관
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
@@ -96,4 +120,17 @@ export function RecurringView({
       </section>
     </div>
   )
+}
+
+function formatRecurringStatus(
+  status: LedgerViewData['recurringItems'][number]['status'],
+): string {
+  const labels = {
+    applied: '이번 달 반영 완료',
+    unapplied: '이번 달 미반영',
+    outOfPeriod: '기간 아님',
+    archived: '보관됨',
+  } as const
+
+  return labels[status]
 }

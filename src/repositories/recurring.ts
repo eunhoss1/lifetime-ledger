@@ -30,6 +30,67 @@ export interface RecurringPreviewItem {
   alreadyGenerated: boolean
 }
 
+export type RecurringMonthStatus =
+  | 'applied'
+  | 'unapplied'
+  | 'outOfPeriod'
+  | 'archived'
+
+export interface RecurringMonthStatusItem {
+  item: RecurringItem
+  status: RecurringMonthStatus
+  scheduledDate?: string
+  categoryName: string
+  accountName: string
+  generatedTransactionId?: EntityId
+}
+
+const UNKNOWN_LABEL = '(알 수 없음)'
+
+export async function listRecurringItemsWithMonthStatus(
+  monthKey: MonthKey,
+  database: LedgerDatabase = db,
+): Promise<RecurringMonthStatusItem[]> {
+  const items = await database.recurringItems.toArray()
+  const statusItems = await Promise.all(
+    items
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map(async (item) => {
+        const [generatedRecord, category, account] = await Promise.all([
+          database.recurringGeneratedRecords
+            .where('[recurringItemId+monthKey]')
+            .equals([item.id, monthKey])
+            .first(),
+          database.categories.get(item.categoryId),
+          database.accounts.get(item.accountId),
+        ])
+        const isArchived = Boolean(item.deletedAt) || !item.active
+        const isInPeriod = isRecurringItemInPeriod(item, monthKey)
+        const status: RecurringMonthStatus = isArchived
+          ? 'archived'
+          : generatedRecord
+            ? 'applied'
+            : isInPeriod && item.type === 'expense'
+              ? 'unapplied'
+              : 'outOfPeriod'
+
+        return {
+          item,
+          status,
+          scheduledDate:
+            !isArchived && isInPeriod && item.type === 'expense'
+              ? getRecurringItemScheduledDate(item, monthKey)
+              : undefined,
+          categoryName: category?.name ?? UNKNOWN_LABEL,
+          accountName: account?.name ?? UNKNOWN_LABEL,
+          generatedTransactionId: generatedRecord?.transactionId,
+        }
+      }),
+  )
+
+  return statusItems
+}
+
 export async function listActiveRecurringItems(
   database: LedgerDatabase = db,
 ): Promise<RecurringItem[]> {
@@ -281,4 +342,16 @@ async function getUsableAccount(
   }
 
   return account
+}
+
+function isRecurringItemInPeriod(item: RecurringItem, monthKey: MonthKey): boolean {
+  if (monthKey < item.startMonth) {
+    return false
+  }
+
+  if (item.endMonth && monthKey > item.endMonth) {
+    return false
+  }
+
+  return true
 }
